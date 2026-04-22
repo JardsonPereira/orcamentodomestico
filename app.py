@@ -13,13 +13,12 @@ except Exception as e:
     st.stop()
 
 def main():
-    st.set_page_config(page_title="Gestão Financeira", layout="wide")
-    st.title("💰 Controle de Gastos Domésticos")
+    st.set_page_config(page_title="Gestão Financeira Mensal", layout="wide")
+    st.title("💰 Controle de Gastos Mensais")
     
     menu = ["Login", "Criar Conta"]
-    choice = st.sidebar.selectbox("Acesso", menu)
+    choice = st.sidebar.selectbox("Acesso ao Sistema", menu)
 
-    # --- CADASTRO SEM CONFIRMAÇÃO DE E-MAIL ---
     if choice == "Criar Conta":
         st.subheader("Cadastro Rápido")
         email_novo = st.text_input("E-mail")
@@ -27,13 +26,11 @@ def main():
         
         if st.button("Cadastrar"):
             try:
-                # Ao desativar 'Confirm Email' no Supabase, o usuário é criado e fica ativo na hora
                 supabase.auth.sign_up({"email": email_novo, "password": senha_nova})
-                st.success("Conta criada com sucesso! Você já pode mudar para a aba de Login.")
+                st.success("Conta criada! Agora você pode fazer o login.")
             except Exception as e:
                 st.error(f"Erro ao cadastrar: {e}")
 
-    # --- LOGIN E DASHBOARD ---
     elif choice == "Login":
         st.sidebar.subheader("Entrar")
         email_login = st.sidebar.text_input("E-mail")
@@ -42,9 +39,9 @@ def main():
         if st.sidebar.checkbox("Aceder"):
             try:
                 sessao = supabase.auth.sign_in_with_password({"email": email_login, "password": senha_login})
-                st.sidebar.success(f"Logado: {email_login}")
+                st.sidebar.success(f"Usuário: {email_login}")
                 
-                tab_lancamento, tab_relatorio = st.tabs(["➕ Lançamento", "📊 Relatórios"])
+                tab_lancamento, tab_relatorio = st.tabs(["➕ Novo Lançamento", "📊 Relatório Mensal"])
 
                 with tab_lancamento:
                     with st.form("form_financeiro", clear_on_submit=True):
@@ -54,9 +51,9 @@ def main():
                             categoria = st.text_input("Descrição")
                         with col2:
                             valor = st.number_input("Valor (R$)", min_value=0.0, format="%.2f")
-                            data = st.date_input("Data", datetime.now())
+                            data = st.date_input("Data da Operação", datetime.now())
                         
-                        if st.form_submit_button("Salvar"):
+                        if st.form_submit_button("Salvar Registro"):
                             dados = {
                                 "user_email": email_login,
                                 "type": tipo,
@@ -65,25 +62,47 @@ def main():
                                 "date": data.strftime("%Y-%m-%d")
                             }
                             supabase.table("profile_transactions").insert(dados).execute()
-                            st.success("Registrado!")
+                            st.success(f"Registrado com sucesso em {data.strftime('%d/%m/%Y')}!")
 
                 with tab_relatorio:
                     resposta = supabase.table("profile_transactions").select("*").eq("user_email", email_login).execute()
                     df = pd.DataFrame(resposta.data)
 
                     if not df.empty:
-                        receitas = df[df['type'] == 'Receita']['amount'].sum()
-                        despesas = df[df['type'] == 'Despesa']['amount'].sum()
+                        # Tratamento de datas
+                        df['date'] = pd.to_datetime(df['date'])
+                        df['Mes_Ano'] = df['date'].dt.strftime('%m/%Y')
+                        
+                        # Seletor de Mês/Ano
+                        meses_disponiveis = df['Mes_Ano'].unique()
+                        mes_selecionado = st.selectbox("Selecione o Mês de Referência", meses_disponiveis)
+
+                        # Filtrar DF pelo mês selecionado
+                        df_mes = df[df['Mes_Ano'] == mes_selecionado].copy()
+                        
+                        # Formatação da data para exibição brasileira
+                        df_mes['Data Formatada'] = df_mes['date'].dt.strftime('%d/%m/%Y')
+
+                        # Totais do mês
+                        receitas = df_mes[df_mes['type'] == 'Receita']['amount'].sum()
+                        despesas = df_mes[df_mes['type'] == 'Despesa']['amount'].sum()
                         saldo = receitas - despesas
 
                         c1, c2, c3 = st.columns(3)
-                        c1.metric("Receitas", f"R$ {receitas:,.2f}")
-                        c2.metric("Despesas", f"R$ {despesas:,.2f}")
-                        c3.metric("Saldo", f"R$ {saldo:,.2f}", delta=saldo)
+                        c1.metric("Receitas do Mês", f"R$ {receitas:,.2f}")
+                        c2.metric("Despesas do Mês", f"R$ {despesas:,.2f}")
+                        c3.metric("Saldo Mensal", f"R$ {saldo:,.2f}", delta=saldo)
 
-                        st.dataframe(df.sort_values(by='date', ascending=False), use_container_width=True)
+                        st.markdown("---")
+                        st.subheader(f"Detalhamento de {mes_selecionado}")
+                        
+                        # Mostrar tabela organizada
+                        exibicao = df_mes[['Data Formatada', 'type', 'category', 'amount']].rename(
+                            columns={'type': 'Tipo', 'category': 'Descrição', 'amount': 'Valor (R$)'}
+                        )
+                        st.dataframe(exibicao.sort_values(by='Data Formatada', ascending=False), use_container_width=True)
                     else:
-                        st.info("Nenhum dado encontrado.")
+                        st.info("Nenhum dado encontrado para gerar o relatório.")
 
             except Exception as e:
                 st.sidebar.error("E-mail ou senha incorretos.")
