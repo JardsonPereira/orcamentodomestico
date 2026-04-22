@@ -24,103 +24,122 @@ def add_months(sourcedate, months):
     return datetime(year, month, day)
 
 def main():
-    st.set_page_config(page_title="Gestão Financeira Jardson", layout="wide", page_icon="💰")
+    # --- UI MODERNA ---
+    st.set_page_config(page_title="ContabilApp Pro", layout="wide", page_icon="💰")
+    
+    # CSS Customizado para um visual mais limpo
+    st.markdown("""
+        <style>
+        .main { background-color: #f5f7f9; }
+        .stButton>button { width: 100%; border-radius: 5px; height: 3em; background-color: #007bff; color: white; }
+        .stMetric { background-color: #ffffff; padding: 15px; border-radius: 10px; box-shadow: 0 2px 4px rgba(0,0,0,0.05); }
+        div[data-testid="stExpander"] { border: none !important; box-shadow: 0 2px 4px rgba(0,0,0,0.05) !important; background: white; border-radius: 10px; }
+        </style>
+    """, unsafe_allow_html=True)
     
     if not st.session_state.logado:
-        st.sidebar.title("🔐 Acesso")
+        st.sidebar.title("🔐 Acesso Restrito")
         email = st.sidebar.text_input("E-mail")
         senha = st.sidebar.text_input("Senha", type='password')
-        if st.sidebar.button("Entrar"):
+        if st.sidebar.button("Entrar no Sistema"):
             try:
                 supabase.auth.sign_in_with_password({"email": email, "password": senha})
                 st.session_state.logado = True
                 st.session_state.user_email = email
                 st.rerun()
-            except: st.error("Erro no login.")
+            except: st.error("E-mail ou senha incorretos.")
     else:
+        # --- HEADER ---
+        c_head1, c_head2 = st.columns([4, 1])
+        c_head1.title("💰 Gestão Financeira Inteligente")
+        c_head2.write(f"👤 {st.session_state.user_email}")
+        if c_head2.button("Sair"):
+            st.session_state.logado = False
+            st.rerun()
+
         # --- BUSCA DE DADOS ---
         res_c = supabase.table("my_cards").select("*").eq("user_email", st.session_state.user_email).execute()
         lista_cartoes = [item['card_name'] for item in res_c.data]
-        # Dicionário para facilitar a exclusão pelo ID
         dict_cartoes = {item['card_name']: item['id'] for item in res_c.data}
         
         res_f = supabase.table("profile_transactions").select("*").eq("user_email", st.session_state.user_email).execute()
         df = pd.DataFrame(res_f.data)
 
-        tab_lanc, tab_extrato, tab_cartao, tab_gerenciar, tab_config = st.tabs(["➕ Lançar", "📊 Extrato", "💳 Visão Cartão", "⚙️ Editar/Excluir", "🛠️ Ajustes"])
+        # --- ABAS MODERNAS ---
+        tab_lanc, tab_extrato, tab_cartao, tab_gerenciar, tab_config = st.tabs([
+            "➕ Lançamentos", "📊 Dash & Extrato", "💳 Faturas", "⚙️ Manutenção", "🛠️ Ajustes"
+        ])
 
-        # --- ABA 1: LANÇAR ---
         with tab_lanc:
-            st.subheader("Novo Lançamento")
-            col_metodo, col_cartao = st.columns(2)
-            with col_metodo:
-                metodo_selecionado = st.selectbox("Forma de Pagamento", ["Dinheiro/PIX", "Cartão de Crédito"], key="metodo_pag")
-            
-            cartao_vontade = None
-            if metodo_selecionado == "Cartão de Crédito":
-                with col_cartao:
-                    if lista_cartoes:
-                        cartao_vontade = st.selectbox("Qual Cartão?", lista_cartoes, key="card_ativo")
-                    else:
-                        st.warning("Cadastre um cartão na aba Ajustes.")
+            with st.container():
+                st.subheader("Registrar Movimentação")
+                col_metodo, col_cartao = st.columns(2)
+                with col_metodo:
+                    metodo_sel = st.selectbox("Forma de Pagamento", ["Dinheiro/PIX", "Cartão de Crédito"], key="metodo_pag")
+                
+                cart_vontade = None
+                if metodo_sel == "Cartão de Crédito":
+                    with col_cartao:
+                        if lista_cartoes:
+                            cart_vontade = st.selectbox("Qual Cartão?", lista_cartoes, key="card_ativo")
+                        else:
+                            st.warning("Cadastre um cartão na aba Ajustes.")
 
-            with st.form("meu_formulario_lancamento", clear_on_submit=True):
-                c1, c2 = st.columns(2)
-                with c1:
-                    tipo = st.selectbox("Tipo", ["Despesa", "Receita"])
-                    desc = st.text_input("Descrição")
-                with c2:
-                    valor_total_input = st.number_input("Valor Total (R$)", min_value=0.01, step=0.01)
-                    data_origem = st.date_input("Data", datetime.now())
-                    total_parc = st.number_input("Parcelas", min_value=1, step=1) if metodo_selecionado == "Cartão de Crédito" else 1
+                with st.expander("📝 Detalhes da Transação", expanded=True):
+                    with st.form("form_v3", clear_on_submit=True):
+                        c1, c2 = st.columns(2)
+                        with c1:
+                            tipo = st.selectbox("Categoria de Fluxo", ["Despesa", "Receita"])
+                            desc = st.text_input("Descrição (Ex: Aluguel, Supermercado)")
+                        with c2:
+                            valor_total = st.number_input("Valor (R$)", min_value=0.01, step=0.01)
+                            data_origem = st.date_input("Data", datetime.now())
+                            total_parc = st.number_input("Parcelas", min_value=1, step=1) if metodo_sel == "Cartão de Crédito" else 1
 
-                if st.form_submit_button("Confirmar e Salvar"):
-                    u_email = st.session_state.get('user_email')
-                    v_parcela = valor_total_input / int(total_parc)
-                    for i in range(int(total_parc)):
-                        data_venc = add_months(data_origem, i)
-                        supabase.table("profile_transactions").insert({
-                            "user_email": u_email, "type": tipo, "category": desc,
-                            "amount": round(v_parcela, 2), "date": data_venc.strftime("%Y-%m-%d"),
-                            "payment_method": metodo_selecionado, "card_name": cartao_vontade,
-                            "installment_total": int(total_parc), "installment_number": i + 1
-                        }).execute()
-                    st.success("Registrado!")
-                    st.rerun()
+                        if st.form_submit_button("Confirmar Lançamento"):
+                            u_email = st.session_state.get('user_email')
+                            v_parc = valor_total / int(total_parc)
+                            for i in range(int(total_parc)):
+                                data_venc = add_months(data_origem, i)
+                                supabase.table("profile_transactions").insert({
+                                    "user_email": u_email, "type": tipo, "category": desc,
+                                    "amount": round(v_parc, 2), "date": data_venc.strftime("%Y-%m-%d"),
+                                    "payment_method": metodo_sel, "card_name": cart_vontade,
+                                    "installment_total": int(total_parc), "installment_number": i + 1
+                                }).execute()
+                            st.success("✅ Registro realizado com sucesso!")
+                            st.rerun()
 
-        # --- ABA 2: EXTRATO ---
         with tab_extrato:
             if not df.empty:
                 df['date'] = pd.to_datetime(df['date'])
                 df['Mês'] = df['date'].dt.strftime('%m/%Y')
-                mes_sel = st.selectbox("Filtrar Mês", sorted(df['Mês'].unique(), reverse=True))
+                mes_sel = st.selectbox("Selecione o Período", sorted(df['Mês'].unique(), reverse=True))
                 
                 f = df[df['Mês'] == mes_sel].copy().sort_values(by='date')
                 f['Parcela'] = f.apply(lambda x: f"{int(x['installment_number'])}/{int(x['installment_total'])}" if x['payment_method'] == "Cartão de Crédito" else "À vista", axis=1)
                 
                 f['Receita (R$)'] = f.apply(lambda x: float(x['amount']) if x['type'] == 'Receita' else 0.0, axis=1)
                 f['Despesa (R$)'] = f.apply(lambda x: float(x['amount']) if x['type'] == 'Despesa' else 0.0, axis=1)
-                f['Resultado (R$)'] = f['Receita (R$)'] - f['Despesa (R$)']
                 
-                t_rec = f['Receita (R$)'].sum()
-                t_desp = f['Despesa (R$)'].sum()
-                saldo = t_rec - t_desp
-
+                # --- CARDS DE MÉTRICAS ---
+                t_rec, t_desp = f['Receita (R$)'].sum(), f['Despesa (R$)'].sum()
                 c1, c2, c3 = st.columns(3)
-                c1.metric("Total Receitas", f"R$ {t_rec:,.2f}")
-                c2.metric("Total Despesas", f"R$ {t_desp:,.2f}")
-                c3.metric("Resultado Final", f"R$ {saldo:,.2f}", delta=float(saldo))
+                c1.metric("📈 Total Receitas", f"R$ {t_rec:,.2f}")
+                c2.metric("📉 Total Despesas", f"R$ {t_desp:,.2f}")
+                c3.metric("⚖️ Saldo do Mês", f"R$ {t_rec - t_desp:,.2f}", delta=float(t_rec - t_desp))
 
-                st.markdown("---")
-                exibicao = f[['date', 'category', 'Parcela', 'card_name', 'Receita (R$)', 'Despesa (R$)', 'Resultado (R$)']].copy()
+                st.markdown("### 📋 Extrato Detalhado")
+                exibicao = f[['date', 'category', 'Parcela', 'card_name', 'Receita (R$)', 'Despesa (R$)']].copy()
                 exibicao['date'] = exibicao['date'].dt.strftime('%d/%m/%Y')
-                for col in ['Receita (R$)', 'Despesa (R$)', 'Resultado (R$)']:
+                for col in ['Receita (R$)', 'Despesa (R$)']:
                     exibicao[col] = exibicao[col].map('R$ {:,.2f}'.format)
 
-                st.dataframe(exibicao.rename(columns={'date': 'Data', 'category': 'Descrição', 'card_name': 'Cartão'}), use_container_width=True, hide_index=True)
+                st.dataframe(exibicao.rename(columns={'date': 'Data', 'category': 'Item', 'card_name': 'Origem'}), use_container_width=True, hide_index=True)
+            else: st.info("ℹ️ Comece adicionando o seu primeiro lançamento.")
 
-        # --- ABA 3: VISÃO CARTÃO ---
         with tab_cartao:
+            st.subheader("💳 Projeção de Faturas")
             if not df.empty:
                 df_c = df[df['payment_method'] == "Cartão de Crédito"].copy()
                 if not df_c.empty:
@@ -132,79 +151,63 @@ def main():
                         proximas = grupo[grupo['date'] >= hoje.replace(day=1)]
                         parc_at = proximas.iloc[0]['installment_number'] if not proximas.empty else total
                         venc = proximas.iloc[0]['date'] if not proximas.empty else grupo.iloc[-1]['date']
-                        
-                        faltam = int(total) - int(parc_at)
                         resumo.append({
                             'Próximo Venc.': venc.strftime('%d/%m/%Y'),
-                            'Cartão': card,
-                            'Descrição': desc,
-                            'Parcelas': f"{int(parc_at)}/{int(total)} (Faltam {faltam})",
-                            'Valor Total Compra': f"R$ {grupo['amount'].sum():,.2f}"
+                            'Cartão': card, 'Item': desc,
+                            'Progresso': f"{int(parc_at)}/{int(total)} (Faltam {int(total)-int(parc_at)})",
+                            'Total Compra': f"R$ {grupo['amount'].sum():,.2f}"
                         })
                     st.dataframe(pd.DataFrame(resumo), use_container_width=True, hide_index=True)
 
-        # --- ABA 4: GERENCIAR ---
         with tab_gerenciar:
-            st.subheader("Gerenciar Lançamentos")
+            st.subheader("⚙️ Manutenção de Dados")
             if not df.empty:
                 df_view = df.sort_values(by='date', ascending=False)
                 opcoes = {f"{r['id']} | {pd.to_datetime(r['date']).strftime('%d/%m/%Y')} | {r['category']}": r['id'] for _, r in df_view.iterrows()}
-                item_sel = st.selectbox("Selecione um lançamento:", list(opcoes.keys()))
+                item_sel = st.selectbox("Selecione o registro para editar ou remover:", list(opcoes.keys()))
                 id_alvo = opcoes[item_sel]
-                dados_atuais = df[df['id'] == id_alvo].iloc[0]
+                d_at = df[df['id'] == id_alvo].iloc[0]
 
-                if dados_atuais['payment_method'] == "Cartão de Crédito":
-                    v_total_compra = float(dados_atuais['amount']) * int(dados_atuais['installment_total'])
-                    st.info(f"💳 **Lançamento de Cartão:** Parcela {int(dados_atuais['installment_number'])} de {int(dados_atuais['installment_total'])}. \n\n**Total Original: R$ {v_total_compra:,.2f}**")
+                if d_at['payment_method'] == "Cartão de Crédito":
+                    st.info(f"💡 Dica: Este item é a parcela {int(d_at['installment_number'])} de {int(d_at['installment_total'])}.")
                 
-                col_ed1, col_ed2 = st.columns(2)
-                with col_ed1:
-                    n_desc = st.text_input("Descrição", value=dados_atuais['category'])
-                    n_valor = st.number_input("Valor da Parcela (R$)", value=float(dados_atuais['amount']))
-                with col_ed2:
-                    n_data = st.date_input("Data do Vencimento", pd.to_datetime(dados_atuais['date']))
-                    st.write("")
-                    c_btn1, c_btn2 = st.columns(2)
-                    if c_btn1.button("💾 Salvar"):
+                with st.form("edit_form"):
+                    col_e1, col_e2 = st.columns(2)
+                    n_desc = col_e1.text_input("Nova Descrição", value=d_at['category'])
+                    n_valor = col_e1.number_input("Novo Valor (R$)", value=float(d_at['amount']))
+                    n_data = col_e2.date_input("Nova Data", pd.to_datetime(d_at['date']))
+                    
+                    c_b1, c_b2 = st.columns(2)
+                    if c_b1.form_submit_button("💾 Salvar"):
                         supabase.table("profile_transactions").update({"category": n_desc, "amount": n_valor, "date": n_data.strftime("%Y-%m-%d")}).eq("id", id_alvo).execute()
                         st.rerun()
-                    if c_btn2.button("🗑️ Excluir"):
+                    if c_b2.form_submit_button("🗑️ Excluir"):
                         supabase.table("profile_transactions").delete().eq("id", id_alvo).execute()
                         st.rerun()
 
-        # --- ABA 5: AJUSTES (COM OPÇÃO DE DELETAR CARTÃO) ---
         with tab_config:
-            st.subheader("🛠️ Gestão de Cartões e Dados")
-            
-            col_add, col_del = st.columns(2)
-            
-            with col_add:
-                st.write("**Adicionar Novo Cartão**")
-                n_c = st.text_input("Nome do Cartão", placeholder="Ex: Nubank")
-                if st.button("➕ Adicionar Cartão"):
+            st.subheader("🛠️ Painel de Controle")
+            col_a, col_b = st.columns(2)
+            with col_a:
+                st.write("**Gerenciar Cartões**")
+                n_c = st.text_input("Nome do Cartão", placeholder="Ex: Inter Platinum")
+                if st.button("Adicionar"):
                     if n_c:
                         supabase.table("my_cards").insert({"user_email": st.session_state.user_email, "card_name": n_c}).execute()
-                        st.success(f"Cartão {n_c} adicionado!")
                         st.rerun()
-                    else:
-                        st.warning("Digite um nome para o cartão.")
-
-            with col_del:
-                st.write("**Deletar Cartão Existente**")
+                
                 if lista_cartoes:
-                    cartao_para_deletar = st.selectbox("Selecione o cartão para remover", lista_cartoes)
-                    if st.button("🗑️ Deletar Cartão"):
-                        id_cartao = dict_cartoes[cartao_para_deletar]
-                        supabase.table("my_cards").delete().eq("id", id_cartao).execute()
-                        st.success(f"Cartão {cartao_para_deletar} removido!")
+                    cart_del = st.selectbox("Remover Cartão", lista_cartoes)
+                    if st.button("Confirmar Remoção"):
+                        supabase.table("my_cards").delete().eq("id", dict_cartoes[cart_del]).execute()
                         st.rerun()
-                else:
-                    st.info("Nenhum cartão cadastrado.")
 
-            st.markdown("---")
-            if st.button("⚠️ Limpar Todos os Lançamentos"):
-                supabase.table("profile_transactions").delete().eq("user_email", st.session_state.user_email).execute()
-                st.rerun()
+            with col_b:
+                st.write("**Banco de Dados**")
+                st.warning("Cuidado! As ações abaixo não podem ser desfeitas.")
+                if st.button("🧨 Resetar Todos os Lançamentos"):
+                    supabase.table("profile_transactions").delete().eq("user_email", st.session_state.user_email).execute()
+                    st.rerun()
 
 if __name__ == "__main__":
     main()
