@@ -68,12 +68,12 @@ def main():
                     tipo = st.selectbox("Tipo", ["Despesa", "Receita"])
                     desc = st.text_input("Descrição")
                 with c2:
-                    valor_total = st.number_input("Valor Total (R$)", min_value=0.01, step=0.01)
+                    valor_total_input = st.number_input("Valor Total (R$)", min_value=0.01, step=0.01)
                     data_origem = st.date_input("Data", datetime.now())
                     total_parc = st.number_input("Parcelas", min_value=1, step=1) if metodo_selecionado == "Cartão de Crédito" else 1
 
                 if st.form_submit_button("Confirmar e Salvar"):
-                    v_parcela = valor_total / int(total_parc)
+                    v_parcela = valor_total_input / int(total_parc)
                     for i in range(int(total_parc)):
                         data_venc = add_months(data_origem, i)
                         supabase.table("profile_transactions").insert({
@@ -90,8 +90,7 @@ def main():
             if not df.empty:
                 df['date'] = pd.to_datetime(df['date'])
                 df['Mês'] = df['date'].dt.strftime('%m/%Y')
-                meses_disponiveis = sorted(df['Mês'].unique(), reverse=True)
-                mes_sel = st.selectbox("Filtrar Mês", meses_disponiveis)
+                mes_sel = st.selectbox("Filtrar Mês", sorted(df['Mês'].unique(), reverse=True))
                 
                 f = df[df['Mês'] == mes_sel].copy()
                 f['Receita'] = f.apply(lambda x: float(x['amount']) if x['type'] == 'Receita' else 0.0, axis=1)
@@ -112,10 +111,8 @@ def main():
                     columns={'date': 'Data', 'category': 'Descrição', 'card_name': 'Cartão'}
                 )
                 st.dataframe(exibicao.sort_values(by='Data', ascending=False), use_container_width=True)
-            else:
-                st.info("Nenhum dado encontrado.")
 
-        # --- ABA 3: VISÃO CARTÃO (AJUSTADA CONFORME SOLICITADO) ---
+        # --- ABA 3: VISÃO CARTÃO (VALOR TOTAL DA COMPRA) ---
         with tab_cartao:
             if not df.empty:
                 df_c = df[df['payment_method'] == "Cartão de Crédito"].copy()
@@ -124,11 +121,12 @@ def main():
                     if sel_c != "Todos":
                         df_c = df_c[df_c['card_name'] == sel_c]
                     
-                    # Formato solicitado: 1/10
-                    df_c['Parcela'] = df_c.apply(lambda x: f"{int(x['installment_number'])}/{int(x['installment_total'])}", axis=1)
+                    # Cálculo do Valor Total da Compra (Valor da parcela * Total de parcelas)
+                    df_c['Valor Total Compra'] = df_c['amount'] * df_c['installment_total']
+                    df_c['Parcelas'] = df_c.apply(lambda x: f"{int(x['installment_number'])}/{int(x['installment_total'])}", axis=1)
                     
-                    view = df_c[['date', 'card_name', 'category', 'Parcela', 'amount']].sort_values(by='date')
-                    st.dataframe(view.rename(columns={'date':'Vencimento', 'amount':'Valor Parcela'}), use_container_width=True)
+                    view = df_c[['date', 'card_name', 'category', 'Parcelas', 'Valor Total Compra']].sort_values(by='date')
+                    st.dataframe(view.rename(columns={'date':'Vencimento', 'category':'Descrição', 'card_name':'Cartão'}), use_container_width=True)
                 else: st.info("Nenhuma despesa no cartão.")
 
         # --- ABA 4: GERENCIAR ---
@@ -138,13 +136,12 @@ def main():
                 opcoes = {f"{r['id']} | {r['date'].strftime('%d/%m/%Y')} | {r['category']} (R$ {r['amount']:.2f})": r['id'] for _, r in df_edit.iterrows()}
                 item_sel = st.selectbox("Selecione para editar/excluir:", list(opcoes.keys()))
                 id_alvo = opcoes[item_sel]
-                
                 dados_atuais = df[df['id'] == id_alvo].iloc[0]
                 
                 col_e1, col_e2 = st.columns(2)
                 with col_e1:
                     nova_desc = st.text_input("Nova Descrição", value=dados_atuais['category'])
-                    novo_valor = st.number_input("Novo Valor", value=float(dados_atuais['amount']))
+                    novo_valor = st.number_input("Novo Valor da Parcela", value=float(dados_atuais['amount']))
                 with col_e2:
                     nova_data = st.date_input("Nova Data", pd.to_datetime(dados_atuais['date']))
                     if st.button("💾 Salvar Alterações"):
