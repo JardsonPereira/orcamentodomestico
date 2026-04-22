@@ -41,6 +41,8 @@ def main():
         # --- BUSCA DE DADOS ---
         res_c = supabase.table("my_cards").select("*").eq("user_email", st.session_state.user_email).execute()
         lista_cartoes = [item['card_name'] for item in res_c.data]
+        # Dicionário para facilitar a exclusão pelo ID
+        dict_cartoes = {item['card_name']: item['id'] for item in res_c.data}
         
         res_f = supabase.table("profile_transactions").select("*").eq("user_email", st.session_state.user_email).execute()
         df = pd.DataFrame(res_f.data)
@@ -141,7 +143,7 @@ def main():
                         })
                     st.dataframe(pd.DataFrame(resumo), use_container_width=True, hide_index=True)
 
-        # --- ABA 4: GERENCIAR (COM VALOR TOTAL DA COMPRA EM CARTÃO) ---
+        # --- ABA 4: GERENCIAR ---
         with tab_gerenciar:
             st.subheader("Gerenciar Lançamentos")
             if not df.empty:
@@ -149,13 +151,11 @@ def main():
                 opcoes = {f"{r['id']} | {pd.to_datetime(r['date']).strftime('%d/%m/%Y')} | {r['category']}": r['id'] for _, r in df_view.iterrows()}
                 item_sel = st.selectbox("Selecione um lançamento:", list(opcoes.keys()))
                 id_alvo = opcoes[item_sel]
-                
                 dados_atuais = df[df['id'] == id_alvo].iloc[0]
 
-                # Lógica para mostrar o valor total se for cartão
                 if dados_atuais['payment_method'] == "Cartão de Crédito":
                     v_total_compra = float(dados_atuais['amount']) * int(dados_atuais['installment_total'])
-                    st.info(f"💳 **Lançamento de Cartão:** Esta é a parcela {int(dados_atuais['installment_number'])} de {int(dados_atuais['installment_total'])}. \n\n**Valor Total da Compra Original: R$ {v_total_compra:,.2f}**")
+                    st.info(f"💳 **Lançamento de Cartão:** Parcela {int(dados_atuais['installment_number'])} de {int(dados_atuais['installment_total'])}. \n\n**Total Original: R$ {v_total_compra:,.2f}**")
                 
                 col_ed1, col_ed2 = st.columns(2)
                 with col_ed1:
@@ -171,13 +171,39 @@ def main():
                     if c_btn2.button("🗑️ Excluir"):
                         supabase.table("profile_transactions").delete().eq("id", id_alvo).execute()
                         st.rerun()
-            else: st.info("Sem dados para gerenciar.")
 
-        # --- ABA 5: AJUSTES ---
+        # --- ABA 5: AJUSTES (COM OPÇÃO DE DELETAR CARTÃO) ---
         with tab_config:
-            n_c = st.text_input("Novo Cartão")
-            if st.button("Adicionar"):
-                supabase.table("my_cards").insert({"user_email": st.session_state.user_email, "card_name": n_c}).execute()
+            st.subheader("🛠️ Gestão de Cartões e Dados")
+            
+            col_add, col_del = st.columns(2)
+            
+            with col_add:
+                st.write("**Adicionar Novo Cartão**")
+                n_c = st.text_input("Nome do Cartão", placeholder="Ex: Nubank")
+                if st.button("➕ Adicionar Cartão"):
+                    if n_c:
+                        supabase.table("my_cards").insert({"user_email": st.session_state.user_email, "card_name": n_c}).execute()
+                        st.success(f"Cartão {n_c} adicionado!")
+                        st.rerun()
+                    else:
+                        st.warning("Digite um nome para o cartão.")
+
+            with col_del:
+                st.write("**Deletar Cartão Existente**")
+                if lista_cartoes:
+                    cartao_para_deletar = st.selectbox("Selecione o cartão para remover", lista_cartoes)
+                    if st.button("🗑️ Deletar Cartão"):
+                        id_cartao = dict_cartoes[cartao_para_deletar]
+                        supabase.table("my_cards").delete().eq("id", id_cartao).execute()
+                        st.success(f"Cartão {cartao_para_deletar} removido!")
+                        st.rerun()
+                else:
+                    st.info("Nenhum cartão cadastrado.")
+
+            st.markdown("---")
+            if st.button("⚠️ Limpar Todos os Lançamentos"):
+                supabase.table("profile_transactions").delete().eq("user_email", st.session_state.user_email).execute()
                 st.rerun()
 
 if __name__ == "__main__":
