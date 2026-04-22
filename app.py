@@ -86,53 +86,72 @@ def main():
                     st.success("Registrado!")
                     st.rerun()
 
-        # --- ABA 2: EXTRATO ---
+        # --- ABA 2: EXTRATO (COM MOEDA REAL E RESULTADO) ---
         with tab_extrato:
             if not df.empty:
                 df['date'] = pd.to_datetime(df['date'])
                 df['Mês'] = df['date'].dt.strftime('%m/%Y')
                 mes_sel = st.selectbox("Filtrar Mês", sorted(df['Mês'].unique(), reverse=True))
-                f = df[df['Mês'] == mes_sel].copy()
-                f['Receita'] = f.apply(lambda x: float(x['amount']) if x['type'] == 'Receita' else 0.0, axis=1)
-                f['Despesa'] = f.apply(lambda x: float(x['amount']) if x['type'] == 'Despesa' else 0.0, axis=1)
-                st.dataframe(f[['date', 'category', 'card_name', 'Receita', 'Despesa']].sort_values(by='date'), use_container_width=True)
+                
+                f = df[df['Mês'] == mes_sel].copy().sort_values(by='date')
+                
+                # Formatação Moeda Real
+                f['Receita (R$)'] = f.apply(lambda x: float(x['amount']) if x['type'] == 'Receita' else 0.0, axis=1)
+                f['Despesa (R$)'] = f.apply(lambda x: float(x['amount']) if x['type'] == 'Despesa' else 0.0, axis=1)
+                
+                # Cálculo do Resultado Acumulado no mês
+                f['Resultado (R$)'] = f['Receita (R$)'] - f['Despesa (R$)']
+                
+                t_rec = f['Receita (R$)'].sum()
+                t_desp = f['Despesa (R$)'].sum()
+                saldo = t_rec - t_desp
 
-        # --- ABA 3: VISÃO CARTÃO (CONSOLIDADA COM FORMATO 1/10 FALTAM X) ---
+                c1, c2, c3 = st.columns(3)
+                c1.metric("Total Receitas", f"R$ {t_rec:,.2f}")
+                c2.metric("Total Despesas", f"R$ {t_desp:,.2f}")
+                c3.metric("Resultado Final", f"R$ {saldo:,.2f}", delta=float(saldo))
+
+                st.markdown("---")
+                
+                # Formatação visual para a tabela
+                exibicao = f[['date', 'category', 'card_name', 'Receita (R$)', 'Despesa (R$)', 'Resultado (R$)']].copy()
+                exibicao['date'] = exibicao['date'].dt.strftime('%d/%m/%Y')
+                
+                # Aplicar formatação de moeda para as colunas
+                for col in ['Receita (R$)', 'Despesa (R$)', 'Resultado (R$)']:
+                    exibicao[col] = exibicao[col].map('R$ {:,.2f}'.format)
+
+                st.dataframe(exibicao.rename(columns={'date': 'Data', 'category': 'Descrição', 'card_name': 'Cartão'}), use_container_width=True)
+            else:
+                st.info("Nenhum dado encontrado.")
+
+        # --- ABA 3: VISÃO CARTÃO ---
         with tab_cartao:
             if not df.empty:
                 df_c = df[df['payment_method'] == "Cartão de Crédito"].copy()
                 if not df_c.empty:
                     df_c['date'] = pd.to_datetime(df_c['date'])
                     hoje = datetime.now()
-                    
-                    # Agrupar para tratar a compra como um todo
-                    # Usamos a descrição e o total de parcelas para identificar a compra única
                     resumo = []
                     for (desc, card, total), grupo in df_c.groupby(['category', 'card_name', 'installment_total']):
-                        # Encontrar a parcela do mês atual ou a próxima a vencer
                         grupo = grupo.sort_values('date')
                         proximas = grupo[grupo['date'] >= hoje.replace(day=1)]
-                        
                         if not proximas.empty:
-                            parcela_atual = proximas.iloc[0]['installment_number']
-                            vencimento = proximas.iloc[0]['date']
+                            parc_at = proximas.iloc[0]['installment_number']
+                            venc = proximas.iloc[0]['date']
                         else:
-                            parcela_atual = total # Já finalizou
-                            vencimento = grupo.iloc[-1]['date']
+                            parc_at = total
+                            venc = grupo.iloc[-1]['date']
                         
-                        faltam = int(total) - int(parcela_atual)
-                        status_str = f"{int(parcela_atual)}/{int(total)} (Faltam {faltam})"
-                        
+                        faltam = int(total) - int(parc_at)
                         resumo.append({
-                            'Próximo Venc.': vencimento,
+                            'Próximo Venc.': venc.strftime('%d/%m/%Y'),
                             'Cartão': card,
                             'Descrição': desc,
-                            'Parcelas': status_str,
-                            'Valor Total': grupo['amount'].sum()
+                            'Parcelas': f"{int(parc_at)}/{int(total)} (Faltam {faltam})",
+                            'Valor Total': f"R$ {grupo['amount'].sum():,.2f}"
                         })
-                    
-                    st.dataframe(pd.DataFrame(resumo).sort_values('Próximo Venc.'), use_container_width=True)
-                else: st.info("Sem despesas no cartão.")
+                    st.dataframe(pd.DataFrame(resumo), use_container_width=True)
 
         # --- ABA 4: GERENCIAR ---
         with tab_gerenciar:
