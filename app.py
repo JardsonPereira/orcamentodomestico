@@ -73,96 +73,78 @@ def main():
                     total_parc = st.number_input("Parcelas", min_value=1, step=1) if metodo_selecionado == "Cartão de Crédito" else 1
 
                 if st.form_submit_button("Confirmar e Salvar"):
-                    # Proteção contra erro de 'user_email' nulo (imagem 1)
                     u_email = st.session_state.get('user_email')
-                    if not u_email:
-                        st.error("Sessão expirada. Refaça o login.")
-                        st.stop()
-                        
                     v_parcela = valor_total_input / int(total_parc)
                     for i in range(int(total_parc)):
                         data_venc = add_months(data_origem, i)
                         supabase.table("profile_transactions").insert({
-                            "user_email": u_email, 
-                            "type": tipo, 
-                            "category": desc,
-                            "amount": round(v_parcela, 2), 
-                            "date": data_venc.strftime("%Y-%m-%d"),
-                            "payment_method": metodo_selecionado, 
-                            "card_name": cartao_vontade,
-                            "installment_total": int(total_parc), 
-                            "installment_number": i + 1
+                            "user_email": u_email, "type": tipo, "category": desc,
+                            "amount": round(v_parcela, 2), "date": data_venc.strftime("%Y-%m-%d"),
+                            "payment_method": metodo_selecionado, "card_name": cartao_vontade,
+                            "installment_total": int(total_parc), "installment_number": i + 1
                         }).execute()
                     st.success("Registrado!")
                     st.rerun()
 
-        # --- ABA 2: EXTRATO (CORREÇÃO DO KEYERROR 'Desp') ---
+        # --- ABA 2: EXTRATO ---
         with tab_extrato:
             if not df.empty:
                 df['date'] = pd.to_datetime(df['date'])
                 df['Mês'] = df['date'].dt.strftime('%m/%Y')
                 mes_sel = st.selectbox("Filtrar Mês", sorted(df['Mês'].unique(), reverse=True))
-                
                 f = df[df['Mês'] == mes_sel].copy()
-                
-                # Garantindo que as colunas existam para o cálculo (Evita erro da Imagem 2)
                 f['Receita'] = f.apply(lambda x: float(x['amount']) if x['type'] == 'Receita' else 0.0, axis=1)
                 f['Despesa'] = f.apply(lambda x: float(x['amount']) if x['type'] == 'Despesa' else 0.0, axis=1)
-                
-                t_rec = f['Receita'].sum()
-                t_desp = f['Despesa'].sum()
-                saldo = t_rec - t_desp
-
-                c1, c2, c3 = st.columns(3)
-                c1.metric("Total Receitas", f"R$ {t_rec:,.2f}")
-                c2.metric("Total Despesas", f"R$ {t_desp:,.2f}")
-                c3.metric("Saldo Mensal", f"R$ {saldo:,.2f}", delta=float(saldo))
-
-                st.markdown("---")
                 st.dataframe(f[['date', 'category', 'card_name', 'Receita', 'Despesa']].sort_values(by='date'), use_container_width=True)
-            else:
-                st.info("Nenhum dado encontrado.")
 
-        # --- ABA 3: VISÃO CARTÃO (CONSOLIDADA POR COMPRA - Imagem 3) ---
+        # --- ABA 3: VISÃO CARTÃO (CONSOLIDADA COM FORMATO 1/10 FALTAM X) ---
         with tab_cartao:
             if not df.empty:
                 df_c = df[df['payment_method'] == "Cartão de Crédito"].copy()
                 if not df_c.empty:
-                    sel_c = st.selectbox("Filtrar Cartão", ["Todos"] + lista_cartoes)
-                    if sel_c != "Todos":
-                        df_c = df_c[df_c['card_name'] == sel_c]
+                    df_c['date'] = pd.to_datetime(df_c['date'])
+                    hoje = datetime.now()
                     
-                    # Agrupar parcelas para mostrar o Valor Total da Compra
-                    # Usamos a descrição e o card_name como base para identificar a mesma compra
-                    df_resumo = df_c.groupby(['category', 'card_name', 'installment_total']).agg({
-                        'date': 'min', # Pega a data da primeira parcela
-                        'amount': 'sum' # Soma todas as parcelas para dar o Total
-                    }).reset_index()
-
-                    df_resumo['Parcelas'] = df_resumo['installment_total'].apply(lambda x: f"Total: {int(x)}x")
+                    # Agrupar para tratar a compra como um todo
+                    # Usamos a descrição e o total de parcelas para identificar a compra única
+                    resumo = []
+                    for (desc, card, total), grupo in df_c.groupby(['category', 'card_name', 'installment_total']):
+                        # Encontrar a parcela do mês atual ou a próxima a vencer
+                        grupo = grupo.sort_values('date')
+                        proximas = grupo[grupo['date'] >= hoje.replace(day=1)]
+                        
+                        if not proximas.empty:
+                            parcela_atual = proximas.iloc[0]['installment_number']
+                            vencimento = proximas.iloc[0]['date']
+                        else:
+                            parcela_atual = total # Já finalizou
+                            vencimento = grupo.iloc[-1]['date']
+                        
+                        faltam = int(total) - int(parcela_atual)
+                        status_str = f"{int(parcela_atual)}/{int(total)} (Faltam {faltam})"
+                        
+                        resumo.append({
+                            'Próximo Venc.': vencimento,
+                            'Cartão': card,
+                            'Descrição': desc,
+                            'Parcelas': status_str,
+                            'Valor Total': grupo['amount'].sum()
+                        })
                     
-                    view = df_resumo[['date', 'card_name', 'category', 'Parcelas', 'amount']].sort_values(by='date')
-                    st.dataframe(view.rename(columns={
-                        'date':'Data Inicial', 
-                        'category':'Descrição', 
-                        'card_name':'Cartão',
-                        'amount': 'Valor Total da Compra'
-                    }), use_container_width=True)
-                else: st.info("Nenhuma despesa no cartão.")
+                    st.dataframe(pd.DataFrame(resumo).sort_values('Próximo Venc.'), use_container_width=True)
+                else: st.info("Sem despesas no cartão.")
 
         # --- ABA 4: GERENCIAR ---
         with tab_gerenciar:
             if not df.empty:
-                df_edit = df.sort_values(by='date', ascending=False)
-                opcoes = {f"{r['id']} | {r['date'].strftime('%d/%m/%Y')} | {r['category']}": r['id'] for _, r in df_edit.iterrows()}
-                item_sel = st.selectbox("Selecione para excluir:", list(opcoes.keys()))
-                if st.button("🗑️ Excluir Registro Selecionado"):
+                opcoes = {f"{r['id']} | {r['category']}": r['id'] for _, r in df.iterrows()}
+                item_sel = st.selectbox("Excluir item:", list(opcoes.keys()))
+                if st.button("🗑️ Confirmar Exclusão"):
                     supabase.table("profile_transactions").delete().eq("id", opcoes[item_sel]).execute()
                     st.rerun()
 
         # --- ABA 5: AJUSTES ---
         with tab_config:
-            st.subheader("🛠️ Ajustes")
             n_c = st.text_input("Novo Cartão")
             if st.button("Adicionar"):
                 supabase.table("my_cards").insert({"user_email": st.session_state.user_email, "card_name": n_c}).execute()
