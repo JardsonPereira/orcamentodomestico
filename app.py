@@ -86,7 +86,7 @@ def main():
                     st.success("Registrado!")
                     st.rerun()
 
-        # --- ABA 2: EXTRATO (COM MOEDA REAL E RESULTADO) ---
+        # --- ABA 2: EXTRATO (MOEDA REAL E SEM INDEX) ---
         with tab_extrato:
             if not df.empty:
                 df['date'] = pd.to_datetime(df['date'])
@@ -95,11 +95,8 @@ def main():
                 
                 f = df[df['Mês'] == mes_sel].copy().sort_values(by='date')
                 
-                # Formatação Moeda Real
                 f['Receita (R$)'] = f.apply(lambda x: float(x['amount']) if x['type'] == 'Receita' else 0.0, axis=1)
                 f['Despesa (R$)'] = f.apply(lambda x: float(x['amount']) if x['type'] == 'Despesa' else 0.0, axis=1)
-                
-                # Cálculo do Resultado Acumulado no mês
                 f['Resultado (R$)'] = f['Receita (R$)'] - f['Despesa (R$)']
                 
                 t_rec = f['Receita (R$)'].sum()
@@ -113,19 +110,21 @@ def main():
 
                 st.markdown("---")
                 
-                # Formatação visual para a tabela
                 exibicao = f[['date', 'category', 'card_name', 'Receita (R$)', 'Despesa (R$)', 'Resultado (R$)']].copy()
                 exibicao['date'] = exibicao['date'].dt.strftime('%d/%m/%Y')
                 
-                # Aplicar formatação de moeda para as colunas
                 for col in ['Receita (R$)', 'Despesa (R$)', 'Resultado (R$)']:
                     exibicao[col] = exibicao[col].map('R$ {:,.2f}'.format)
 
-                st.dataframe(exibicao.rename(columns={'date': 'Data', 'category': 'Descrição', 'card_name': 'Cartão'}), use_container_width=True)
+                st.dataframe(
+                    exibicao.rename(columns={'date': 'Data', 'category': 'Descrição', 'card_name': 'Cartão'}), 
+                    use_container_width=True,
+                    hide_index=True
+                )
             else:
                 st.info("Nenhum dado encontrado.")
 
-        # --- ABA 3: VISÃO CARTÃO ---
+        # --- ABA 3: VISÃO CARTÃO (SEM INDEX) ---
         with tab_cartao:
             if not df.empty:
                 df_c = df[df['payment_method'] == "Cartão de Crédito"].copy()
@@ -151,7 +150,7 @@ def main():
                             'Parcelas': f"{int(parc_at)}/{int(total)} (Faltam {faltam})",
                             'Valor Total': f"R$ {grupo['amount'].sum():,.2f}"
                         })
-                    st.dataframe(pd.DataFrame(resumo), use_container_width=True)
+                    st.dataframe(pd.DataFrame(resumo), use_container_width=True, hide_index=True)
 
         # --- ABA 4: GERENCIAR ---
         with tab_gerenciar:
