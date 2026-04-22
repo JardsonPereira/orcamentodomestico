@@ -86,7 +86,7 @@ def main():
                     st.success("Registrado!")
                     st.rerun()
 
-        # --- ABA 2: EXTRATO (COM PARCELAS 1/10) ---
+        # --- ABA 2: EXTRATO ---
         with tab_extrato:
             if not df.empty:
                 df['date'] = pd.to_datetime(df['date'])
@@ -94,8 +94,6 @@ def main():
                 mes_sel = st.selectbox("Filtrar Mês", sorted(df['Mês'].unique(), reverse=True))
                 
                 f = df[df['Mês'] == mes_sel].copy().sort_values(by='date')
-                
-                # Lógica para mostrar 1/10 no extrato
                 f['Parcela'] = f.apply(lambda x: f"{int(x['installment_number'])}/{int(x['installment_total'])}" if x['payment_method'] == "Cartão de Crédito" else "À vista", axis=1)
                 
                 f['Receita (R$)'] = f.apply(lambda x: float(x['amount']) if x['type'] == 'Receita' else 0.0, axis=1)
@@ -112,20 +110,12 @@ def main():
                 c3.metric("Resultado Final", f"R$ {saldo:,.2f}", delta=float(saldo))
 
                 st.markdown("---")
-                
                 exibicao = f[['date', 'category', 'Parcela', 'card_name', 'Receita (R$)', 'Despesa (R$)', 'Resultado (R$)']].copy()
                 exibicao['date'] = exibicao['date'].dt.strftime('%d/%m/%Y')
-                
                 for col in ['Receita (R$)', 'Despesa (R$)', 'Resultado (R$)']:
                     exibicao[col] = exibicao[col].map('R$ {:,.2f}'.format)
 
-                st.dataframe(
-                    exibicao.rename(columns={'date': 'Data', 'category': 'Descrição', 'card_name': 'Cartão'}), 
-                    use_container_width=True,
-                    hide_index=True
-                )
-            else:
-                st.info("Nenhum dado encontrado.")
+                st.dataframe(exibicao.rename(columns={'date': 'Data', 'category': 'Descrição', 'card_name': 'Cartão'}), use_container_width=True, hide_index=True)
 
         # --- ABA 3: VISÃO CARTÃO ---
         with tab_cartao:
@@ -138,12 +128,8 @@ def main():
                     for (desc, card, total), grupo in df_c.groupby(['category', 'card_name', 'installment_total']):
                         grupo = grupo.sort_values('date')
                         proximas = grupo[grupo['date'] >= hoje.replace(day=1)]
-                        if not proximas.empty:
-                            parc_at = proximas.iloc[0]['installment_number']
-                            venc = proximas.iloc[0]['date']
-                        else:
-                            parc_at = total
-                            venc = grupo.iloc[-1]['date']
+                        parc_at = proximas.iloc[0]['installment_number'] if not proximas.empty else total
+                        venc = proximas.iloc[0]['date'] if not proximas.empty else grupo.iloc[-1]['date']
                         
                         faltam = int(total) - int(parc_at)
                         resumo.append({
@@ -151,18 +137,41 @@ def main():
                             'Cartão': card,
                             'Descrição': desc,
                             'Parcelas': f"{int(parc_at)}/{int(total)} (Faltam {faltam})",
-                            'Valor Total': f"R$ {grupo['amount'].sum():,.2f}"
+                            'Valor Total Compra': f"R$ {grupo['amount'].sum():,.2f}"
                         })
                     st.dataframe(pd.DataFrame(resumo), use_container_width=True, hide_index=True)
 
-        # --- ABA 4: GERENCIAR ---
+        # --- ABA 4: GERENCIAR (COM VALOR TOTAL DA COMPRA EM CARTÃO) ---
         with tab_gerenciar:
+            st.subheader("Gerenciar Lançamentos")
             if not df.empty:
-                opcoes = {f"{r['id']} | {r['category']}": r['id'] for _, r in df.iterrows()}
-                item_sel = st.selectbox("Excluir item:", list(opcoes.keys()))
-                if st.button("🗑️ Confirmar Exclusão"):
-                    supabase.table("profile_transactions").delete().eq("id", opcoes[item_sel]).execute()
-                    st.rerun()
+                df_view = df.sort_values(by='date', ascending=False)
+                opcoes = {f"{r['id']} | {pd.to_datetime(r['date']).strftime('%d/%m/%Y')} | {r['category']}": r['id'] for _, r in df_view.iterrows()}
+                item_sel = st.selectbox("Selecione um lançamento:", list(opcoes.keys()))
+                id_alvo = opcoes[item_sel]
+                
+                dados_atuais = df[df['id'] == id_alvo].iloc[0]
+
+                # Lógica para mostrar o valor total se for cartão
+                if dados_atuais['payment_method'] == "Cartão de Crédito":
+                    v_total_compra = float(dados_atuais['amount']) * int(dados_atuais['installment_total'])
+                    st.info(f"💳 **Lançamento de Cartão:** Esta é a parcela {int(dados_atuais['installment_number'])} de {int(dados_atuais['installment_total'])}. \n\n**Valor Total da Compra Original: R$ {v_total_compra:,.2f}**")
+                
+                col_ed1, col_ed2 = st.columns(2)
+                with col_ed1:
+                    n_desc = st.text_input("Descrição", value=dados_atuais['category'])
+                    n_valor = st.number_input("Valor da Parcela (R$)", value=float(dados_atuais['amount']))
+                with col_ed2:
+                    n_data = st.date_input("Data do Vencimento", pd.to_datetime(dados_atuais['date']))
+                    st.write("")
+                    c_btn1, c_btn2 = st.columns(2)
+                    if c_btn1.button("💾 Salvar"):
+                        supabase.table("profile_transactions").update({"category": n_desc, "amount": n_valor, "date": n_data.strftime("%Y-%m-%d")}).eq("id", id_alvo).execute()
+                        st.rerun()
+                    if c_btn2.button("🗑️ Excluir"):
+                        supabase.table("profile_transactions").delete().eq("id", id_alvo).execute()
+                        st.rerun()
+            else: st.info("Sem dados para gerenciar.")
 
         # --- ABA 5: AJUSTES ---
         with tab_config:
