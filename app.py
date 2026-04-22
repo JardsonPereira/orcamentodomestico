@@ -19,7 +19,7 @@ if "logado" not in st.session_state:
 if "user_email" not in st.session_state:
     st.session_state.user_email = ""
 
-# --- FUNÇÃO PARA CALCULAR MESES (PARCELAS) ---
+# --- FUNÇÃO PARA PROJETAR MESES ---
 def add_months(sourcedate, months):
     month = sourcedate.month - 1 + months
     year = sourcedate.year + month // 12
@@ -49,24 +49,17 @@ def main():
 
         st.title("💰 Controle Financeiro Jardson")
 
-        # Buscar dados necessários
-        res_c = supabase.table("my_cards").select("card_name").eq("user_email", st.session_state.user_email).execute()
+        # BUSCA DE DADOS
+        res_c = supabase.table("my_cards").select("*").eq("user_email", st.session_state.user_email).execute()
         lista_cartoes = [item['card_name'] for item in res_c.data]
         
         res_f = supabase.table("profile_transactions").select("*").eq("user_email", st.session_state.user_email).execute()
         df = pd.DataFrame(res_f.data)
 
-        tab_lanc, tab_extrato, tab_gerenciar, tab_visao_cartao = st.tabs(["➕ Lançamentos", "📊 Extrato Mensal", "⚙️ Gerenciar Dados", "💳 Detalhe de Cartões"])
+        tab_lanc, tab_extrato, tab_gerenciar, tab_cartoes = st.tabs(["➕ Lançamentos", "📊 Extrato Mensal", "⚙️ Gerenciar Dados", "💳 Gerenciar Cartões"])
 
+        # --- ABA LANÇAMENTOS ---
         with tab_lanc:
-            with st.expander("🆕 Cadastrar Novo Cartão de Crédito"):
-                nome_novo_cartao = st.text_input("Nome do Cartão")
-                if st.button("Salvar Novo Cartão"):
-                    if nome_novo_cartao:
-                        supabase.table("my_cards").insert({"user_email": st.session_state.user_email, "card_name": nome_novo_cartao}).execute()
-                        st.success("Cartão cadastrado!")
-                        st.rerun()
-
             st.subheader("Registrar Nova Movimentação")
             with st.form("form_financeiro", clear_on_submit=True):
                 c1, c2 = st.columns(2)
@@ -79,8 +72,11 @@ def main():
                     data_base = st.date_input("Data", datetime.now())
                     cartao_sel, parcelas = None, 1
                     if metodo == "Cartão de Crédito":
-                        cartao_sel = st.selectbox("Selecione o Cartão", lista_cartoes)
-                        parcelas = st.number_input("Parcelas", min_value=1, value=1)
+                        if lista_cartoes:
+                            cartao_sel = st.selectbox("Selecione o Cartão", lista_cartoes)
+                            parcelas = st.number_input("Parcelas", min_value=1, value=1)
+                        else:
+                            st.warning("Cadastre um cartão na aba 'Gerenciar Cartões' primeiro.")
                 
                 if st.form_submit_button("Finalizar Lançamento"):
                     valor_parc = valor_total / parcelas
@@ -96,6 +92,7 @@ def main():
                     st.success("Registrado!")
                     st.rerun()
 
+        # --- ABA EXTRATO ---
         with tab_extrato:
             if not df.empty:
                 df['date'] = pd.to_datetime(df['date'])
@@ -105,45 +102,66 @@ def main():
                 st.dataframe(f[['date', 'category', 'payment_method', 'card_name', 'amount']], use_container_width=True)
             else: st.info("Sem dados.")
 
+        # --- ABA GERENCIAR DADOS (EDITAR/EXCLUIR LANÇAMENTOS) ---
         with tab_gerenciar:
-            st.subheader("Editar ou Excluir Lançamentos")
+            st.subheader("Manutenção de Lançamentos")
             if not df.empty:
-                # Seletor para escolher qual ID editar/excluir
                 df_sorted = df.sort_values(by='date', ascending=False)
-                opcoes_edicao = {f"{row['id']} - {row['category']} (R$ {row['amount']:.2f})": row['id'] for _, row in df_sorted.iterrows()}
-                selecionado = st.selectbox("Selecione um lançamento para modificar:", list(opcoes_edicao.keys()))
-                id_alvo = opcoes_edicao[selecionado]
+                opcoes_edicao = {f"{row['id']} - {row['category']} ({row['date']})": row['id'] for _, row in df_sorted.iterrows()}
+                sel_id = st.selectbox("Escolha um lançamento:", list(opcoes_edicao.keys()))
+                id_alvo = opcoes_edicao[sel_id]
                 
-                item_data = df[df['id'] == id_alvo].iloc[0]
-
-                col_ed, col_ex = st.columns([2, 1])
+                item = df[df['id'] == id_alvo].iloc[0]
+                c_ed, c_ex = st.columns([2, 1])
                 
-                with col_ed:
-                    st.markdown("#### Editar Campos")
-                    nova_desc = st.text_input("Nova Descrição", value=item_data['category'])
-                    novo_valor = st.number_input("Novo Valor", value=float(item_data['amount']))
-                    if st.button("Confirmar Edição"):
-                        supabase.table("profile_transactions").update({
-                            "category": nova_desc, "amount": novo_valor
-                        }).eq("id", id_alvo).execute()
-                        st.success("Atualizado com sucesso!")
+                with c_ed:
+                    n_desc = st.text_input("Editar Descrição", value=item['category'])
+                    n_val = st.number_input("Editar Valor", value=float(item['amount']))
+                    if st.button("Salvar Alteração"):
+                        supabase.table("profile_transactions").update({"category": n_desc, "amount": n_val}).eq("id", id_alvo).execute()
+                        st.success("Alterado!")
                         st.rerun()
-
-                with col_ex:
-                    st.markdown("#### Excluir")
-                    st.warning("Esta ação é permanente!")
-                    if st.button("🗑️ Excluir Registro"):
+                with c_ex:
+                    st.write("Ação Crítica")
+                    if st.button("🗑️ Excluir Lançamento"):
                         supabase.table("profile_transactions").delete().eq("id", id_alvo).execute()
-                        st.error("Registro removido!")
                         st.rerun()
-            else:
-                st.info("Nada para gerenciar.")
 
-        with tab_visao_cartao:
-            if not df.empty:
-                df_c = df[df['payment_method'] == "Cartão de Crédito"].copy()
-                if not df_c.empty:
-                    st.dataframe(df_c[['date', 'card_name', 'category', 'amount']], use_container_width=True)
+        # --- ABA GERENCIAR CARTÕES (NOVO: EXCLUIR CARTÃO COM LIMPEZA) ---
+        with tab_cartoes:
+            st.subheader("Seus Cartões")
+            
+            # Cadastro
+            with st.expander("➕ Adicionar Novo Cartão"):
+                n_c = st.text_input("Nome do Cartão")
+                if st.button("Salvar Cartão"):
+                    if n_c:
+                        supabase.table("my_cards").insert({"user_email": st.session_state.user_email, "card_name": n_c}).execute()
+                        st.rerun()
+
+            st.markdown("---")
+            st.subheader("Excluir Cartão")
+            if lista_cartoes:
+                cartao_para_deletar = st.selectbox("Selecione o cartão para remover:", lista_cartoes)
+                
+                # Verificação de dependências
+                tem_dados = not df[df['card_name'] == cartao_para_deletar].empty if not df.empty else False
+                
+                if tem_dados:
+                    st.warning(f"⚠️ O cartão '{cartao_para_deletar}' possui lançamentos vinculados. Ao excluí-lo, TODAS as despesas deste cartão também serão apagadas!")
+                
+                if st.button(f"Confirmar Exclusão de {cartao_para_deletar}"):
+                    # 1. Deletar transações primeiro (se houver)
+                    if tem_dados:
+                        supabase.table("profile_transactions").delete().eq("user_email", st.session_state.user_email).eq("card_name", cartao_para_deletar).execute()
+                    
+                    # 2. Deletar o cartão
+                    supabase.table("my_cards").delete().eq("user_email", st.session_state.user_email).eq("card_name", cartao_para_deletar).execute()
+                    
+                    st.success(f"Cartão e dados de '{cartao_para_deletar}' foram removidos.")
+                    st.rerun()
+            else:
+                st.info("Nenhum cartão cadastrado.")
 
 if __name__ == "__main__":
     main()
