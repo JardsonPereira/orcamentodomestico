@@ -1,112 +1,83 @@
 import streamlit as st
-import sqlite3
+from supabase import create_client, Client
 import pandas as pd
-import hashlib
 from datetime import datetime
 
-# --- CONFIGURAÇÕES E BANCO DE DATA ---
-def make_hashes(password):
-    return hashlib.sha256(str.encode(password)).hexdigest()
+# --- CONFIGURAÇÕES SUPABASE ---
+# No Streamlit Cloud, use st.secrets para segurança
+url = st.sidebar.text_input("Supabase URL", type="password")
+key = st.sidebar.text_input("Supabase Key", type="password")
 
-def check_hashes(password, hashed_text):
-    if make_hashes(password) == hashed_text:
-        return hashed_text
-    return False
+if not url or not key:
+    st.warning("Insira suas credenciais do Supabase na barra lateral para começar.")
+    st.stop()
 
-conn = sqlite3.connect('data.db', check_same_thread=False)
-c = conn.cursor()
+supabase: Client = create_client(url, key)
 
-def create_usertable():
-    c.execute('CREATE TABLE IF NOT EXISTS userstable(username TEXT, password TEXT)')
-
-def add_userdata(username, password):
-    c.execute('INSERT INTO userstable(username, password) VALUES (?,?)', (username, password))
-    conn.commit()
-
-def login_user(username, password):
-    c.execute('SELECT * FROM userstable WHERE username =? AND password = ?', (username, password))
-    data = c.fetchall()
-    return data
-
-def create_financetable(username):
-    # Cria uma tabela específica ou usa uma coluna de usuário para filtrar
-    c.execute(f'CREATE TABLE IF NOT EXISTS transactions_{username}(type TEXT, category TEXT, amount REAL, date TEXT)')
-    conn.commit()
-
-# --- INTERFACE ---
 def main():
-    st.set_page_config(page_title="Controle Financeiro", layout="centered")
-    st.title("💰 Gestão de Despesas e Receitas")
+    st.set_page_config(page_title="Controle Financeiro Supabase", layout="centered")
+    st.title("💰 Gestão Financeira com Cloud")
 
-    menu = ["Home", "Login", "Cadastro"]
-    choice = st.sidebar.selectbox("Menu", menu)
+    menu = ["Login", "Cadastro"]
+    choice = st.sidebar.selectbox("Acesso", menu)
 
-    if choice == "Home":
-        st.subheader("Bem-vindo ao seu App Financeiro")
-        st.info("Faça o login para gerenciar suas contas.")
-
-    elif choice == "Cadastro":
-        st.subheader("Criar Nova Conta")
-        new_user = st.text_input("Usuário")
-        new_password = st.text_input("Senha", type='password')
-
-        if st.button("Cadastrar"):
-            create_usertable()
-            add_userdata(new_user, make_hashes(new_password))
-            st.success("Conta criada com sucesso!")
-            st.info("Vá para o menu de Login.")
+    if choice == "Cadastro":
+        st.subheader("Criar conta no Supabase")
+        email = st.text_input("Email")
+        password = st.text_input("Senha", type='password')
+        if st.button("Registrar"):
+            try:
+                res = supabase.auth.sign_up({"email": email, "password": password})
+                st.success("Cadastro realizado! Verifique seu email para confirmar.")
+            except Exception as e:
+                st.error(f"Erro: {e}")
 
     elif choice == "Login":
-        st.subheader("Login de Usuário")
-        username = st.sidebar.text_input("Usuário")
+        st.subheader("Login")
+        email = st.sidebar.text_input("Email")
         password = st.sidebar.text_input("Senha", type='password')
 
         if st.sidebar.checkbox("Entrar"):
-            create_usertable()
-            hashed_pswd = make_hashes(password)
-            result = login_user(username, hashed_pswd)
-
-            if result:
-                st.success(f"Logado como {username}")
-                create_financetable(username)
-
-                # --- ÁREA DO USUÁRIO ---
-                tab1, tab2, tab3 = st.tabs(["Lançamentos", "Histórico", "Resumo"])
+            try:
+                user = supabase.auth.sign_in_with_password({"email": email, "password": password})
+                st.success(f"Bem-vindo, {email}")
+                
+                # --- DASHBOARD APÓS LOGIN ---
+                tab1, tab2 = st.tabs(["Novo Lançamento", "Relatórios"])
 
                 with tab1:
-                    st.markdown("### Novo Lançamento")
-                    tipo = st.selectbox("Tipo", ["Receita", "Despesa"])
-                    cat = st.text_input("Categoria (Ex: Aluguel, Salário, Alimentação)")
-                    valor = st.number_input("Valor (R$)", min_value=0.0, step=0.01)
-                    data = st.date_input("Data", datetime.now())
+                    with st.form("form_financeiro"):
+                        tipo = st.selectbox("Tipo", ["Receita", "Despesa"])
+                        cat = st.text_input("Categoria")
+                        valor = st.number_input("Valor", min_value=0.0)
+                        data = st.date_input("Data")
+                        enviar = st.form_submit_button("Salvar")
 
-                    if st.button("Salvar Registro"):
-                        c.execute(f'INSERT INTO transactions_{username} VALUES (?,?,?,?)', 
-                                 (tipo, cat, valor, data.strftime("%Y-%m-%d")))
-                        conn.commit()
-                        st.success("Registrado!")
+                        if enviar:
+                            data_insert = {
+                                "user_email": email,
+                                "type": tipo,
+                                "category": cat,
+                                "amount": valor,
+                                "date": data.strftime("%Y-%m-%d")
+                            }
+                            supabase.table("profile_transactions").insert(data_insert).execute()
+                            st.success("Dados salvos no Supabase!")
 
                 with tab2:
-                    st.markdown("### Seus Dados")
-                    df = pd.read_sql_query(f"SELECT * FROM transactions_{username}", conn)
-                    st.dataframe(df, use_container_width=True)
-
-                with tab3:
-                    df = pd.read_sql_query(f"SELECT * FROM transactions_{username}", conn)
+                    res = supabase.table("profile_transactions").select("*").eq("user_email", email).execute()
+                    df = pd.DataFrame(res.data)
+                    
                     if not df.empty:
-                        receita_total = df[df['type'] == 'Receita']['amount'].sum()
-                        despesa_total = df[df['type'] == 'Despesa']['amount'].sum()
-                        saldo = receita_total - despesa_total
-
-                        col1, col2, col3 = st.columns(3)
-                        col1.metric("Receitas", f"R$ {receita_total:,.2f}")
-                        col2.metric("Despesas", f"R$ {despesa_total:,.2f}")
-                        col3.metric("Saldo", f"R$ {saldo:,.2f}", delta=saldo)
+                        st.dataframe(df)
+                        receita = df[df['type'] == 'Receita']['amount'].sum()
+                        despesa = df[df['type'] == 'Despesa']['amount'].sum()
+                        st.metric("Saldo Atual", f"R$ {receita - despesa:,.2f}")
                     else:
-                        st.warning("Nenhum dado cadastrado.")
+                        st.info("Nenhum registro encontrado.")
 
-            else:
-                st.warning("Usuário ou senha incorretos.")
+            except Exception as e:
+                st.sidebar.error("Falha no login. Verifique as credenciais.")
 
 if __name__ == '__main__':
     main()
