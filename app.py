@@ -5,66 +5,58 @@ from datetime import datetime
 
 # --- CONFIGURAÇÃO DE ACESSO (SECRETS) ---
 try:
-    # O Streamlit busca automaticamente nos "Secrets" que você configurou
     URL = st.secrets["SUPABASE_URL"]
     KEY = st.secrets["SUPABASE_KEY"]
     supabase: Client = create_client(URL, KEY)
 except Exception as e:
-    st.error("Erro ao carregar credenciais. Verifique as chaves nos Secrets do Streamlit.")
+    st.error("Erro ao carregar credenciais. Verifique as chaves nos Secrets.")
     st.stop()
 
 def main():
-    st.set_page_config(page_title="Gestão Financeira Pessoal", layout="wide")
+    st.set_page_config(page_title="Gestão Financeira", layout="wide")
+    st.title("💰 Controle de Gastos Domésticos")
     
-    st.title("💰 Sistema de Controle de Gastos")
-    
-    # Menu lateral para navegação
     menu = ["Login", "Criar Conta"]
-    choice = st.sidebar.selectbox("Acesso ao Sistema", menu)
+    choice = st.sidebar.selectbox("Acesso", menu)
 
-    # --- LÓGICA DE CADASTRO ---
+    # --- CADASTRO SEM CONFIRMAÇÃO DE E-MAIL ---
     if choice == "Criar Conta":
-        st.subheader("Cadastro de Novo Usuário")
-        email_novo = st.text_input("E-mail para cadastro")
-        senha_nova = st.text_input("Defina uma senha", type='password')
+        st.subheader("Cadastro Rápido")
+        email_novo = st.text_input("E-mail")
+        senha_nova = st.text_input("Senha", type='password')
         
-        if st.button("Finalizar Cadastro"):
+        if st.button("Cadastrar"):
             try:
-                # O Supabase gerencia a segurança da senha automaticamente
+                # Ao desativar 'Confirm Email' no Supabase, o usuário é criado e fica ativo na hora
                 supabase.auth.sign_up({"email": email_novo, "password": senha_nova})
-                st.success("Cadastro realizado! Por favor, verifique se recebeu um e-mail de confirmação.")
+                st.success("Conta criada com sucesso! Você já pode mudar para a aba de Login.")
             except Exception as e:
                 st.error(f"Erro ao cadastrar: {e}")
 
-    # --- LÓGICA DE LOGIN E OPERAÇÃO ---
+    # --- LOGIN E DASHBOARD ---
     elif choice == "Login":
-        st.sidebar.subheader("Área de Login")
+        st.sidebar.subheader("Entrar")
         email_login = st.sidebar.text_input("E-mail")
         senha_login = st.sidebar.text_input("Senha", type='password')
         
         if st.sidebar.checkbox("Aceder"):
             try:
-                # Autenticação via Supabase
                 sessao = supabase.auth.sign_in_with_password({"email": email_login, "password": senha_login})
-                st.sidebar.success(f"Logado como: {email_login}")
+                st.sidebar.success(f"Logado: {email_login}")
                 
-                # Interface principal após login
-                tab_lancamento, tab_relatorio = st.tabs(["➕ Novo Lançamento", "📊 Histórico e Gráficos"])
+                tab_lancamento, tab_relatorio = st.tabs(["➕ Lançamento", "📊 Relatórios"])
 
                 with tab_lancamento:
-                    st.markdown("### Registrar Receita ou Despesa")
                     with st.form("form_financeiro", clear_on_submit=True):
                         col1, col2 = st.columns(2)
                         with col1:
-                            tipo = st.selectbox("Categoria de Fluxo", ["Receita", "Despesa"])
-                            categoria = st.text_input("Descrição (Ex: Supermercado, Aluguel, Freelance)")
+                            tipo = st.selectbox("Tipo", ["Receita", "Despesa"])
+                            categoria = st.text_input("Descrição")
                         with col2:
                             valor = st.number_input("Valor (R$)", min_value=0.0, format="%.2f")
-                            data = st.date_input("Data da Operação", datetime.now())
+                            data = st.date_input("Data", datetime.now())
                         
-                        botao_salvar = st.form_submit_button("Guardar Registro")
-
-                        if botao_salvar:
+                        if st.form_submit_button("Salvar"):
                             dados = {
                                 "user_email": email_login,
                                 "type": tipo,
@@ -72,33 +64,26 @@ def main():
                                 "amount": valor,
                                 "date": data.strftime("%Y-%m-%d")
                             }
-                            # Insere na tabela que criamos no SQL do Supabase
                             supabase.table("profile_transactions").insert(dados).execute()
-                            st.balloons()
-                            st.success("Lançamento registado com sucesso!")
+                            st.success("Registrado!")
 
                 with tab_relatorio:
-                    st.markdown("### Resumo das Finanças")
-                    # Busca apenas os dados do usuário logado
                     resposta = supabase.table("profile_transactions").select("*").eq("user_email", email_login).execute()
                     df = pd.DataFrame(resposta.data)
 
                     if not df.empty:
-                        # Cálculos de Totais
                         receitas = df[df['type'] == 'Receita']['amount'].sum()
                         despesas = df[df['type'] == 'Despesa']['amount'].sum()
                         saldo = receitas - despesas
 
                         c1, c2, c3 = st.columns(3)
-                        c1.metric("Total Receitas", f"R$ {receitas:,.2f}")
-                        c2.metric("Total Despesas", f"R$ {despesas:,.2f}", delta_color="inverse")
-                        c3.metric("Saldo Líquido", f"R$ {saldo:,.2f}", delta=saldo)
+                        c1.metric("Receitas", f"R$ {receitas:,.2f}")
+                        c2.metric("Despesas", f"R$ {despesas:,.2f}")
+                        c3.metric("Saldo", f"R$ {saldo:,.2f}", delta=saldo)
 
-                        st.markdown("---")
-                        st.subheader("Lista Detalhada")
                         st.dataframe(df.sort_values(by='date', ascending=False), use_container_width=True)
                     else:
-                        st.info("Ainda não existem lançamentos registados para este utilizador.")
+                        st.info("Nenhum dado encontrado.")
 
             except Exception as e:
                 st.sidebar.error("E-mail ou senha incorretos.")
