@@ -85,7 +85,7 @@ def main():
                     st.success("Registrado!")
                     st.rerun()
 
-        # --- ABA 2: EXTRATO (CORREÇÃO DA RECEITA) ---
+        # --- ABA 2: EXTRATO ---
         with tab_extrato:
             if not df.empty:
                 df['date'] = pd.to_datetime(df['date'])
@@ -94,11 +94,8 @@ def main():
                 mes_sel = st.selectbox("Filtrar Mês", meses_disponiveis)
                 
                 f = df[df['Mês'] == mes_sel].copy()
-                
-                # Cálculo rigoroso de Receita vs Despesa
                 f['Receita'] = f.apply(lambda x: float(x['amount']) if x['type'] == 'Receita' else 0.0, axis=1)
                 f['Despesa'] = f.apply(lambda x: float(x['amount']) if x['type'] == 'Despesa' else 0.0, axis=1)
-                
                 f['Status'] = f.apply(lambda x: f"{int(x['installment_number'])}/{int(x['installment_total'])}" if x['payment_method'] == "Cartão de Crédito" else "À vista", axis=1)
 
                 t_rec = f['Receita'].sum()
@@ -118,15 +115,23 @@ def main():
             else:
                 st.info("Nenhum dado encontrado.")
 
-        # --- OUTRAS ABAS MANTIDAS ---
+        # --- ABA 3: VISÃO CARTÃO (AJUSTADA CONFORME SOLICITADO) ---
         with tab_cartao:
             if not df.empty:
                 df_c = df[df['payment_method'] == "Cartão de Crédito"].copy()
                 if not df_c.empty:
-                    df_c['Faltam'] = df_c['installment_total'].astype(int) - df_c['installment_number'].astype(int)
-                    df_c['Status'] = df_c.apply(lambda x: f"{int(x['installment_number'])}/{int(x['installment_total'])} (Faltam {int(x['Faltam'])})", axis=1)
-                    st.dataframe(df_c[['date', 'card_name', 'category', 'Status', 'amount']].sort_values(by='date'))
+                    sel_c = st.selectbox("Filtrar Cartão", ["Todos"] + lista_cartoes)
+                    if sel_c != "Todos":
+                        df_c = df_c[df_c['card_name'] == sel_c]
+                    
+                    # Formato solicitado: 1/10
+                    df_c['Parcela'] = df_c.apply(lambda x: f"{int(x['installment_number'])}/{int(x['installment_total'])}", axis=1)
+                    
+                    view = df_c[['date', 'card_name', 'category', 'Parcela', 'amount']].sort_values(by='date')
+                    st.dataframe(view.rename(columns={'date':'Vencimento', 'amount':'Valor Parcela'}), use_container_width=True)
+                else: st.info("Nenhuma despesa no cartão.")
 
+        # --- ABA 4: GERENCIAR ---
         with tab_gerenciar:
             if not df.empty:
                 df_edit = df.sort_values(by='date', ascending=False)
@@ -151,6 +156,7 @@ def main():
                         supabase.table("profile_transactions").delete().eq("id", id_alvo).execute()
                         st.rerun()
 
+        # --- ABA 5: AJUSTES ---
         with tab_config:
             st.subheader("🛠️ Ajustes")
             c1, c2 = st.columns(2)
