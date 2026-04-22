@@ -86,7 +86,7 @@ def main():
                     st.success("Registrado!")
                     st.rerun()
 
-        # --- ABA 2: EXTRATO (MOEDA REAL E SEM INDEX) ---
+        # --- ABA 2: EXTRATO (COM PARCELAS 1/10) ---
         with tab_extrato:
             if not df.empty:
                 df['date'] = pd.to_datetime(df['date'])
@@ -94,6 +94,9 @@ def main():
                 mes_sel = st.selectbox("Filtrar Mês", sorted(df['Mês'].unique(), reverse=True))
                 
                 f = df[df['Mês'] == mes_sel].copy().sort_values(by='date')
+                
+                # Lógica para mostrar 1/10 no extrato
+                f['Parcela'] = f.apply(lambda x: f"{int(x['installment_number'])}/{int(x['installment_total'])}" if x['payment_method'] == "Cartão de Crédito" else "À vista", axis=1)
                 
                 f['Receita (R$)'] = f.apply(lambda x: float(x['amount']) if x['type'] == 'Receita' else 0.0, axis=1)
                 f['Despesa (R$)'] = f.apply(lambda x: float(x['amount']) if x['type'] == 'Despesa' else 0.0, axis=1)
@@ -110,7 +113,7 @@ def main():
 
                 st.markdown("---")
                 
-                exibicao = f[['date', 'category', 'card_name', 'Receita (R$)', 'Despesa (R$)', 'Resultado (R$)']].copy()
+                exibicao = f[['date', 'category', 'Parcela', 'card_name', 'Receita (R$)', 'Despesa (R$)', 'Resultado (R$)']].copy()
                 exibicao['date'] = exibicao['date'].dt.strftime('%d/%m/%Y')
                 
                 for col in ['Receita (R$)', 'Despesa (R$)', 'Resultado (R$)']:
@@ -124,7 +127,7 @@ def main():
             else:
                 st.info("Nenhum dado encontrado.")
 
-        # --- ABA 3: VISÃO CARTÃO (SEM INDEX) ---
+        # --- ABA 3: VISÃO CARTÃO ---
         with tab_cartao:
             if not df.empty:
                 df_c = df[df['payment_method'] == "Cartão de Crédito"].copy()
