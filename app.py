@@ -27,7 +27,6 @@ def main():
     # --- CONFIGURAÇÃO MOBILE-FRIENDLY ---
     st.set_page_config(page_title="ContabilApp Pro", layout="wide", page_icon="💰")
     
-    # CSS Customizado
     st.markdown("""
         <style>
         @media (max-width: 640px) {
@@ -61,7 +60,6 @@ def main():
                 st.session_state.logado = False
                 st.rerun()
 
-        # --- BUSCA DE DADOS ---
         res_c = supabase.table("my_cards").select("*").eq("user_email", st.session_state.user_email).execute()
         lista_cartoes = [item['card_name'] for item in res_c.data]
         dict_cartoes = {item['card_name']: item['id'] for item in res_c.data}
@@ -112,10 +110,8 @@ def main():
                 df['Mês'] = df['date'].dt.strftime('%m/%Y')
                 meses_disponiveis = sorted(df['Mês'].unique(), key=lambda x: datetime.strptime(x, '%m/%Y'))
                 mes_atual_str = datetime.now().strftime('%m/%Y')
-                try:
-                    default_idx = meses_disponiveis.index(mes_atual_str)
-                except:
-                    default_idx = len(meses_disponiveis) - 1
+                try: default_idx = meses_disponiveis.index(mes_atual_str)
+                except: default_idx = len(meses_disponiveis) - 1
 
                 st.write("Período:")
                 mes_sel = st.radio("Meses", meses_disponiveis, index=default_idx, horizontal=True, label_visibility="collapsed")
@@ -141,15 +137,13 @@ def main():
                             cor = "#2ECC71" if row['type'] == 'Receita' else "#E74C3C"
                             simbolo = "+" if row['type'] == 'Receita' else "-"
                             st.markdown(f"<p style='text-align:right; color:{cor}; font-weight:bold; margin-top:5px;'> {simbolo} R$ {row['amount']:,.2f}</p>", unsafe_allow_html=True)
-            else:
-                st.info("Sem dados.")
+            else: st.info("Sem dados.")
 
         with tab_cartao:
             if not df.empty and lista_cartoes:
                 df_c = df[df['payment_method'] == "Cartão de Crédito"].copy()
                 df_c['date'] = pd.to_datetime(df_c['date'])
                 hoje = datetime.now()
-                
                 for nome_cartao in lista_cartoes:
                     with st.container(border=True):
                         st.markdown(f"### 💳 {nome_cartao}")
@@ -165,31 +159,32 @@ def main():
                                 if not proximas.empty:
                                     parc_at = proximas.iloc[0]['installment_number']
                                     venc = proximas.iloc[0]['date']
-                                    resumo_cartao.append({
-                                        'Venc.': venc.strftime('%d/%m'),
-                                        'Item': desc,
-                                        'Parc.': f"{int(parc_at)}/{int(total)}",
-                                        'Valor': f"R$ {proximas.iloc[0]['amount']:,.2f}"
-                                    })
+                                    resumo_cartao.append({'Venc.': venc.strftime('%d/%m'), 'Item': desc, 'Parc.': f"{int(parc_at)}/{int(total)}", 'Valor': f"R$ {proximas.iloc[0]['amount']:,.2f}"})
                             if resumo_cartao:
-                                with c2:
-                                    st.dataframe(pd.DataFrame(resumo_cartao), use_container_width=True, hide_index=True)
-                            else:
-                                c2.caption("Nenhuma parcela pendente para este mês.")
-                        else:
-                            st.info(f"Nenhum lançamento encontrado para o cartão {nome_cartao}.")
-            else:
-                st.info("Cadastre cartões na aba 'Config' e realize lançamentos para visualizar.")
+                                with c2: st.dataframe(pd.DataFrame(resumo_cartao), use_container_width=True, hide_index=True)
+                            else: c2.caption("Nenhuma parcela pendente.")
+                        else: st.info(f"Sem lançamentos para {nome_cartao}.")
+            else: st.info("Sem cartões ou dados.")
 
         with tab_gerenciar:
             if not df.empty:
-                df_view = df.sort_values(by='date', ascending=False)
-                opcoes = {f"{r['date'].strftime('%d/%m')} | {r['category']}": r['id'] for _, r in df_view.iterrows()}
-                item_sel = st.selectbox("Editar/Excluir", list(opcoes.keys()))
+                # Agrupamos para mostrar apenas um registro por compra (mesma data original, descrição, cartão e total de parcelas)
+                df_edit = df.copy()
+                df_edit['date'] = pd.to_datetime(df_edit['date'])
+                
+                # Identificamos a data da primeira parcela para agrupar compras parceladas
+                # Criamos uma chave de agrupamento: data_inicial, categoria, cartao, total_parcelas
+                df_edit = df_edit.sort_values(['category', 'card_name', 'installment_total', 'date'])
+                
+                # Para cada grupo de parcelas, pegamos apenas o registro da parcela 1 (ou a menor disponível)
+                df_grouped = df_edit.groupby(['category', 'card_name', 'installment_total', 'payment_method'], as_index=False).first()
+                df_grouped = df_grouped.sort_values(by='date', ascending=False)
+
+                opcoes = {f"{r['date'].strftime('%d/%m')} | {r['category']} (Total)": r['id'] for _, r in df_grouped.iterrows()}
+                item_sel = st.selectbox("Selecione para Editar/Excluir", list(opcoes.keys()))
                 id_alvo = opcoes[item_sel]
                 d_at = df[df['id'] == id_alvo].iloc[0]
 
-                # --- CÁLCULO DO VALOR TOTAL PARA CARTÃO ---
                 valor_exibido = float(d_at['amount'])
                 if d_at['payment_method'] == "Cartão de Crédito":
                     valor_exibido = float(d_at['amount']) * int(d_at['installment_total'])
@@ -197,23 +192,36 @@ def main():
                 with st.form("edit_mobile"):
                     n_desc = st.text_input("Descrição", value=d_at['category'])
                     n_valor = st.number_input("Valor Total do Lançamento", value=valor_exibido)
-                    n_data = st.date_input("Data", pd.to_datetime(d_at['date']))
+                    n_data = st.date_input("Data Original", pd.to_datetime(d_at['date']))
                     
-                    if st.form_submit_button("Salvar Alterações"):
-                        # Se for cartão, salva a parcela proporcional novamente
-                        valor_final = n_valor
-                        if d_at['payment_method'] == "Cartão de Crédito":
-                             valor_final = n_valor / int(d_at['installment_total'])
+                    st.info("⚠️ Alterações serão aplicadas a todas as parcelas deste lançamento.")
+                    
+                    if st.form_submit_button("Salvar Alterações em Tudo"):
+                        # Localizamos todas as parcelas relacionadas
+                        relacionadas = df[(df['category'] == d_at['category']) & 
+                                         (df['card_name'] == d_at['card_name']) & 
+                                         (df['installment_total'] == d_at['installment_total'])]
                         
-                        supabase.table("profile_transactions").update({
-                            "category": n_desc, 
-                            "amount": round(valor_final, 2), 
-                            "date": n_data.strftime("%Y-%m-%d")
-                        }).eq("id", id_alvo).execute()
+                        v_parc_novo = n_valor / int(d_at['installment_total'])
+                        
+                        for idx, row in relacionadas.iterrows():
+                            # Ajusta a data de cada parcela baseada na nova data inicial
+                            nova_data_parc = add_months(n_data, int(row['installment_number']) - 1)
+                            supabase.table("profile_transactions").update({
+                                "category": n_desc, 
+                                "amount": round(v_parc_novo, 2), 
+                                "date": nova_data_parc.strftime("%Y-%m-%d")
+                            }).eq("id", row['id']).execute()
+                        st.success("Todas as parcelas atualizadas!")
                         st.rerun()
                         
-                    if st.form_submit_button("🗑️ Excluir Registro"):
-                        supabase.table("profile_transactions").delete().eq("id", id_alvo).execute()
+                    if st.form_submit_button("🗑️ Excluir Lançamento Completo"):
+                        relacionadas = df[(df['category'] == d_at['category']) & 
+                                         (df['card_name'] == d_at['card_name']) & 
+                                         (df['installment_total'] == d_at['installment_total'])]
+                        for _, row in relacionadas.iterrows():
+                            supabase.table("profile_transactions").delete().eq("id", row['id']).execute()
+                        st.warning("Lançamento e parcelas excluídos.")
                         st.rerun()
 
         with tab_config:
