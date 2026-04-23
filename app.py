@@ -176,63 +176,70 @@ def main():
                 df_edit = df.copy()
                 df_edit['date'] = pd.to_datetime(df_edit['date'])
                 
-                # AGRUPAMENTO PARA MOSTRAR VALOR TOTAL (Mantendo apenas o primeiro registro de cada grupo)
-                # Ordenamos para garantir que a parcela 1 seja a referência da data
+                # Agrupa tudo para mostrar valores totais: 
+                # Receitas, Despesas PIX (1 parcela) e Despesas Cartão (agrupadas por compra)
                 df_edit = df_edit.sort_values(['category', 'card_name', 'installment_total', 'date'])
-                df_grouped = df_edit.groupby(['category', 'card_name', 'installment_total', 'payment_method'], as_index=False).first()
+                df_grouped = df_edit.groupby(['category', 'card_name', 'installment_total', 'payment_method', 'type'], as_index=False).first()
                 df_grouped = df_grouped.sort_values(by='date', ascending=False)
                 
                 opcoes = {}
                 for _, r in df_grouped.iterrows():
-                    # Cálculo do valor total para o rótulo
+                    # Cálculo do valor total (se for 1 parcela, o valor é o mesmo)
                     v_total = float(r['amount']) * int(r['installment_total'])
-                    prefixo = "💳" if r['payment_method'] == "Cartão de Crédito" else "💵"
+                    
+                    # Definição de ícones visuais
+                    if r['type'] == 'Receita':
+                        prefixo = "💰"
+                    else:
+                        prefixo = "💳" if r['payment_method'] == "Cartão de Crédito" else "💵"
+                        
+                    # Sinalização de parcelas no label
                     parc_txt = f" [{int(r['installment_total'])}x]" if r['payment_method'] == "Cartão de Crédito" else ""
                     label = f"{prefixo} {r['date'].strftime('%d/%m/%y')} | {r['category']}{parc_txt} - R${v_total:,.2f}"
                     opcoes[label] = r['id']
                 
-                item_sel = st.selectbox("Selecione a compra para gerenciar", list(opcoes.keys()))
+                item_sel = st.selectbox("Selecione para gerenciar", list(opcoes.keys()))
                 id_alvo = opcoes[item_sel]
                 d_at = df[df['id'] == id_alvo].iloc[0]
 
-                # Valor total para o campo de entrada
                 valor_total_compra = float(d_at['amount']) * int(d_at['installment_total'])
 
-                with st.form("edit_compra_total"):
-                    st.write(f"Modo: **{d_at['payment_method']}**")
-                    n_desc = st.text_input("Descrição", value=d_at['category'])
-                    n_valor_full = st.number_input("Valor TOTAL da Compra", value=valor_total_compra)
-                    n_data_base = st.date_input("Data da Compra (1ª Parcela)", pd.to_datetime(d_at['date']))
+                with st.form("edit_full_management"):
+                    st.write(f"Tipo: **{d_at['type']}** | Método: **{d_at['payment_method']}**")
+                    n_desc = st.text_input("Descrição/Categoria", value=d_at['category'])
+                    n_valor_full = st.number_input("Valor Total", value=valor_total_compra)
+                    n_data_base = st.date_input("Data Original", pd.to_datetime(d_at['date']))
                     
-                    if d_at['payment_method'] == "Cartão de Crédito":
-                        st.caption(f"Parcelamento detectado: {int(d_at['installment_total'])}x")
-
-                    if st.form_submit_button("💾 Salvar Alterações em Todas as Parcelas"):
-                        # Busca todas as parcelas desse grupo específico
+                    st.info("⚠️ Alterações em compras parceladas afetarão todas as parcelas futuras e passadas deste item.")
+                    
+                    if st.form_submit_button("💾 Salvar Alterações"):
+                        # Localiza as parcelas vinculadas a este lançamento
                         relacionadas = df[(df['category'] == d_at['category']) & 
                                          (df['card_name'] == d_at['card_name']) & 
-                                         (df['installment_total'] == d_at['installment_total'])]
+                                         (df['installment_total'] == d_at['installment_total']) &
+                                         (df['type'] == d_at['type'])]
                         
                         v_nova_parc = n_valor_full / int(d_at['installment_total'])
                         
                         for idx, row in relacionadas.iterrows():
-                            # Reposiciona as datas com base na nova data da 1ª parcela
+                            # Ajusta a data baseada na posição da parcela
                             nova_data = add_months(n_data_base, int(row['installment_number']) - 1)
                             supabase.table("profile_transactions").update({
                                 "category": n_desc, 
                                 "amount": round(v_nova_parc, 2), 
                                 "date": nova_data.strftime("%Y-%m-%d")
                             }).eq("id", row['id']).execute()
-                        st.success("Compra e parcelas atualizadas!")
+                        st.success("Dados atualizados!")
                         st.rerun()
                         
-                    if st.form_submit_button("🗑️ Excluir Compra Completa"):
+                    if st.form_submit_button("🗑️ Excluir Registro"):
                         relacionadas = df[(df['category'] == d_at['category']) & 
                                          (df['card_name'] == d_at['card_name']) & 
-                                         (df['installment_total'] == d_at['installment_total'])]
+                                         (df['installment_total'] == d_at['installment_total']) &
+                                         (df['type'] == d_at['type'])]
                         for _, row in relacionadas.iterrows():
                             supabase.table("profile_transactions").delete().eq("id", row['id']).execute()
-                        st.warning("Toda a movimentação foi excluída.")
+                        st.warning("Removido com sucesso.")
                         st.rerun()
 
         with tab_config:
