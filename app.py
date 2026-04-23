@@ -150,19 +150,23 @@ def main():
                 df_c['date'] = pd.to_datetime(df_c['date'])
                 hoje = datetime.now()
                 
-                # Criar colunas dinamicamente com base no número de cartões
-                cols_cartao = st.columns(len(lista_cartoes))
-                
-                for idx, nome_cartao in enumerate(lista_cartoes):
-                    with cols_cartao[idx]:
-                        st.subheader(f"💳 {nome_cartao}")
+                # Ajuste Proporcional: No Desktop colunas lado a lado, no Mobile os containers se adaptam
+                # Usamos um loop com containers para manter a proporção visual limpa
+                for nome_cartao in lista_cartoes:
+                    with st.container(border=True):
+                        st.markdown(f"### 💳 {nome_cartao}")
+                        
                         dados_este_cartao = df_c[df_c['card_name'] == nome_cartao]
                         
                         if not dados_este_cartao.empty:
+                            # Filtra apenas o que vence no mês atual para a métrica principal
                             total_fatura = dados_este_cartao[dados_este_cartao['date'].dt.strftime('%m/%Y') == hoje.strftime('%m/%Y')]['amount'].sum()
-                            st.metric("Fatura Atual", f"R$ {total_fatura:,.2f}")
+                            
+                            c1, c2 = st.columns([1, 2])
+                            c1.metric("Fatura do Mês", f"R$ {total_fatura:,.2f}")
                             
                             resumo_cartao = []
+                            # Pega as próximas parcelas (incluindo as de hoje em diante)
                             for (desc, total), grupo in dados_este_cartao.groupby(['category', 'installment_total']):
                                 grupo = grupo.sort_values('date')
                                 proximas = grupo[grupo['date'] >= hoje.replace(day=1)]
@@ -177,13 +181,14 @@ def main():
                                     })
                             
                             if resumo_cartao:
-                                st.dataframe(pd.DataFrame(resumo_cartao), use_container_width=True, hide_index=True)
+                                with c2:
+                                    st.dataframe(pd.DataFrame(resumo_cartao), use_container_width=True, hide_index=True)
                             else:
-                                st.caption("Nenhuma parcela pendente.")
+                                c2.caption("Nenhuma parcela pendente para este mês.")
                         else:
-                            st.info("Sem lançamentos.")
+                            st.info(f"Nenhum lançamento encontrado para o cartão {nome_cartao}.")
             else:
-                st.info("Cadastre cartões e realize lançamentos para visualizar.")
+                st.info("Cadastre cartões na aba 'Config' e realize lançamentos para visualizar.")
 
         with tab_gerenciar:
             if not df.empty:
