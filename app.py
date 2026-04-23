@@ -46,11 +46,8 @@ def main():
         }
         
         .stButton>button {
-            width: 100%;
-            border-radius: 10px;
-            height: 3.2em;
-            font-weight: 600;
-            transition: all 0.2s;
+            width: 100%; border-radius: 10px; height: 3.2em;
+            font-weight: 600; transition: all 0.2s;
         }
         
         [data-testid="stExpander"], div[data-testid="stForm"], .stContainer { 
@@ -65,14 +62,13 @@ def main():
         _, col_central, _ = st.columns([1, 2, 1])
         
         with col_central:
-            escolha = st.radio("Acesso", ["Entrar na Conta", "Criar Nova Conta"], horizontal=True, label_visibility="collapsed")
+            escolha = st.radio("Acesso", ["Entrar na Conta", "Criar Nova Conta", "Recuperar Senha"], horizontal=True, label_visibility="collapsed")
             
             with st.container():
                 if escolha == "Entrar na Conta":
                     st.subheader("Login")
                     email = st.text_input("E-mail", placeholder="seu@email.com")
                     senha = st.text_input("Senha", type='password')
-                    nome_login = st.text_input("Seu Nome", placeholder="Como quer ser chamado?")
                     
                     if st.button("ACESSAR SISTEMA"):
                         try:
@@ -80,12 +76,12 @@ def main():
                             if response.user:
                                 st.session_state.logado = True
                                 st.session_state.user_email = email
-                                st.session_state.user_name = nome_login if nome_login else "Usuário"
+                                # O nome será buscado ou ficará como Usuário por padrão no login
                                 st.rerun()
-                        except Exception as e:
-                            st.error("E-mail ou senha incorretos. Verifique se o e-mail foi confirmado.")
+                        except:
+                            st.error("Erro no login. Verifique se o e-mail/senha estão corretos.")
                             
-                else:
+                elif escolha == "Criar Nova Conta":
                     st.subheader("Cadastro")
                     novo_nome = st.text_input("Seu Nome", placeholder="Ex: Jardson")
                     novo_email = st.text_input("E-mail", placeholder="seu@email.com")
@@ -93,25 +89,28 @@ def main():
                     
                     if st.button("CRIAR MINHA CONTA"):
                         if not novo_nome or not novo_email or len(nova_senha) < 6:
-                            st.warning("Preencha todos os campos. Senha deve ter 6+ caracteres.")
+                            st.warning("Preencha todos os campos corretamente.")
                         else:
                             try:
-                                # Registro no Supabase
                                 res = supabase.auth.sign_up({"email": novo_email, "password": nova_senha})
-                                
-                                # Verificação robusta: se retornou usuário, logamos direto.
                                 if res.user:
-                                    # Se as identidades estiverem vazias, o e-mail já existe no banco
-                                    if hasattr(res.user, 'identities') and len(res.user.identities) == 0:
-                                        st.error("Este e-mail já está cadastrado. Tente fazer Login.")
-                                    else:
-                                        st.session_state.logado = True
-                                        st.session_state.user_email = novo_email
-                                        st.session_state.user_name = novo_nome
-                                        st.success("Conta criada com sucesso!")
-                                        st.rerun()
+                                    st.session_state.logado = True
+                                    st.session_state.user_email = novo_email
+                                    st.session_state.user_name = novo_nome
+                                    st.success("Conta criada! Acessando...")
+                                    st.rerun()
                             except Exception as e:
-                                st.error(f"Erro técnico: {str(e)}")
+                                st.error(f"Erro ao cadastrar: {str(e)}")
+
+                else:
+                    st.subheader("Recuperação de Senha")
+                    email_rec = st.text_input("Digite seu e-mail cadastrado", placeholder="seu@email.com")
+                    if st.button("ENVIAR E-MAIL DE RECUPERAÇÃO"):
+                        try:
+                            supabase.auth.reset_password_for_email(email_rec)
+                            st.success("E-mail enviado! Verifique sua caixa de entrada para redefinir a senha.")
+                        except Exception as e:
+                            st.error(f"Erro ao enviar: {str(e)}")
 
     else:
         # --- SISTEMA LOGADO ---
@@ -121,12 +120,12 @@ def main():
             st.title(f"💰 Olá, {nome_display}")
         with col_user:
             with st.expander(f"👤 Perfil"):
-                st.write(f"ID: {st.session_state.user_email}")
+                st.write(f"Conectado como: {st.session_state.user_email}")
                 if st.button("Encerrar Sessão"):
                     st.session_state.logado = False
                     st.rerun()
 
-        # --- BUSCA DE DADOS ---
+        # DADOS
         res_c = supabase.table("my_cards").select("*").eq("user_email", st.session_state.user_email).execute()
         lista_cartoes = [item['card_name'] for item in res_c.data]
         dict_cartoes = {item['card_name']: item['id'] for item in res_c.data}
