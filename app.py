@@ -13,13 +13,13 @@ except:
     st.error("Erro nas credenciais. Verifique os Secrets.")
     st.stop()
 
-# --- INICIALIZAÇÃO DO STATE (Essencial para evitar erros) ---
+# --- INICIALIZAÇÃO DO STATE ---
 if "logado" not in st.session_state:
     st.session_state.logado = False
 if "user_name" not in st.session_state:
     st.session_state.user_name = ""
 if "auth_mode" not in st.session_state:
-    st.session_state.auth_mode = "Login"  # Alterna entre Login e Cadastro
+    st.session_state.auth_mode = "Login"
 
 def add_months(sourcedate, months):
     month = sourcedate.month - 1 + months
@@ -37,18 +37,6 @@ def main():
         @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap');
         html, body, [class*="st-"] { font-family: 'Inter', sans-serif; }
         .stApp { background-color: #F0F2F5; }
-        
-        /* Estilização da área de login */
-        .auth-container {
-            background-color: white;
-            padding: 40px;
-            border-radius: 20px;
-            box-shadow: 0 10px 25px rgba(0,0,0,0.05);
-            max-width: 450px;
-            margin: auto;
-        }
-        
-        /* Botões */
         .stButton>button {
             width: 100%;
             border-radius: 10px;
@@ -60,14 +48,11 @@ def main():
     """, unsafe_allow_html=True)
     
     if not st.session_state.logado:
-        # --- TELA DE ENTRADA (LOGIN / CADASTRO) ---
         st.markdown("<h1 style='text-align: center;'>💰 ContabilApp Pro</h1>", unsafe_allow_html=True)
         
-        # Centralizando o formulário
         _, col_central, _ = st.columns([1, 2, 1])
         
         with col_central:
-            # Alternador de abas visual
             escolha = st.radio("Selecione uma opção:", ["Entrar na Conta", "Criar Nova Conta"], horizontal=True, label_visibility="collapsed")
             
             with st.container(border=True):
@@ -89,13 +74,21 @@ def main():
                             
                 else:
                     st.subheader("Comece agora mesmo")
+                    novo_nome = st.text_input("Seu Nome", placeholder="Ex: Maria")
                     novo_email = st.text_input("E-mail", placeholder="exemplo@email.com")
                     nova_senha = st.text_input("Crie uma senha", type='password', placeholder="mínimo 6 caracteres")
                     
                     if st.button("CRIAR MINHA CONTA"):
                         try:
-                            supabase.auth.sign_up({"email": novo_email, "password": nova_senha})
-                            st.success("Conta criada! Verifique seu e-mail para confirmar e depois faça login.")
+                            # Tenta cadastrar o usuário
+                            res = supabase.auth.sign_up({"email": novo_email, "password": nova_senha})
+                            
+                            # Se o e-mail confirm estiver desativado no Supabase, logamos direto
+                            st.session_state.logado = True
+                            st.session_state.user_email = novo_email
+                            st.session_state.user_name = novo_nome
+                            st.success("Conta criada com sucesso!")
+                            st.rerun()
                         except Exception as e:
                             st.error(f"Erro ao cadastrar: {e}")
 
@@ -103,7 +96,6 @@ def main():
         # --- SISTEMA APÓS LOGIN ---
         col_title, col_user = st.columns([3, 1])
         with col_title:
-            # Uso do .get para evitar o erro de Attribute se o nome estiver vazio
             nome = st.session_state.get('user_name', 'Usuário')
             st.title(f"💰 Olá, {nome}")
             
