@@ -13,11 +13,13 @@ except:
     st.error("Erro nas credenciais. Verifique os Secrets.")
     st.stop()
 
-# --- INICIALIZAÇÃO DO STATE ---
+# --- INICIALIZAÇÃO DO STATE (Essencial para evitar erros) ---
 if "logado" not in st.session_state:
     st.session_state.logado = False
 if "user_name" not in st.session_state:
     st.session_state.user_name = ""
+if "auth_mode" not in st.session_state:
+    st.session_state.auth_mode = "Login"  # Alterna entre Login e Cadastro
 
 def add_months(sourcedate, months):
     month = sourcedate.month - 1 + months
@@ -30,92 +32,90 @@ def main():
     # --- CONFIGURAÇÃO VISUAL ---
     st.set_page_config(page_title="ContabilApp Pro", layout="wide", page_icon="💰")
     
-    # CSS AVANÇADO PARA UI/UX
     st.markdown("""
         <style>
         @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap');
-        
-        html, body, [class*="st-"] {
-            font-family: 'Inter', sans-serif;
-        }
+        html, body, [class*="st-"] { font-family: 'Inter', sans-serif; }
         .stApp { background-color: #F0F2F5; }
-        [data-testid="stMetric"] {
+        
+        /* Estilização da área de login */
+        .auth-container {
             background-color: white;
-            padding: 15px !important;
-            border-radius: 12px;
-            box-shadow: 0 2px 4px rgba(0,0,0,0.05);
-            border: 1px solid #E0E0E0;
+            padding: 40px;
+            border-radius: 20px;
+            box-shadow: 0 10px 25px rgba(0,0,0,0.05);
+            max-width: 450px;
+            margin: auto;
         }
+        
+        /* Botões */
         .stButton>button {
             width: 100%;
             border-radius: 10px;
-            height: 3.5em;
-            background-color: #2E6FF2;
-            color: white;
+            height: 3.2em;
             font-weight: 600;
-            border: none;
-            transition: all 0.3s ease;
-        }
-        .stButton>button:hover {
-            background-color: #1A54C5;
-            box-shadow: 0 4px 12px rgba(46, 111, 242, 0.3);
-        }
-        .stTabs [data-baseweb="tab-list"] { gap: 10px; background-color: transparent; }
-        .stTabs [data-baseweb="tab"] {
-            height: 45px;
-            background-color: white;
-            border-radius: 8px;
-            padding: 0 20px;
-            border: 1px solid #E0E0E0;
-        }
-        [data-testid="stExpander"], div[data-testid="stForm"] {
-            background-color: white !important;
-            border-radius: 15px !important;
-            border: 1px solid #E0E0E0 !important;
-            padding: 10px;
-        }
-        h1, h2, h3 { color: #1A1A1A; font-weight: 700 !important; }
-        div[data-testid="stHorizontalBlock"] {
-            background: white;
-            padding: 10px;
-            border-radius: 12px;
-            margin-bottom: 20px;
+            transition: all 0.2s;
         }
         </style>
     """, unsafe_allow_html=True)
     
     if not st.session_state.logado:
-        st.sidebar.title("🔐 Acesso")
-        nome_usuario = st.sidebar.text_input("Seu Nome (como deseja ser chamado)")
-        email = st.sidebar.text_input("E-mail")
-        senha = st.sidebar.text_input("Senha", type='password')
+        # --- TELA DE ENTRADA (LOGIN / CADASTRO) ---
+        st.markdown("<h1 style='text-align: center;'>💰 ContabilApp Pro</h1>", unsafe_allow_html=True)
         
-        if st.sidebar.button("Entrar"):
-            if not nome_usuario:
-                st.sidebar.warning("Por favor, insira um nome para exibição.")
-            else:
-                try:
-                    supabase.auth.sign_in_with_password({"email": email, "password": senha})
-                    st.session_state.logado = True
-                    st.session_state.user_email = email
-                    st.session_state.user_name = nome_usuario
-                    st.rerun()
-                except: 
-                    st.sidebar.error("Dados incorretos.")
+        # Centralizando o formulário
+        _, col_central, _ = st.columns([1, 2, 1])
+        
+        with col_central:
+            # Alternador de abas visual
+            escolha = st.radio("Selecione uma opção:", ["Entrar na Conta", "Criar Nova Conta"], horizontal=True, label_visibility="collapsed")
+            
+            with st.container(border=True):
+                if escolha == "Entrar na Conta":
+                    st.subheader("Bem-vindo de volta")
+                    email = st.text_input("E-mail", placeholder="seu@email.com")
+                    senha = st.text_input("Senha", type='password', placeholder="••••••••")
+                    nome_fantasia = st.text_input("Como quer ser chamado?", placeholder="Ex: João")
+                    
+                    if st.button("ACESSAR SISTEMA"):
+                        try:
+                            supabase.auth.sign_in_with_password({"email": email, "password": senha})
+                            st.session_state.logado = True
+                            st.session_state.user_email = email
+                            st.session_state.user_name = nome_fantasia
+                            st.rerun()
+                        except:
+                            st.error("E-mail ou senha incorretos.")
+                            
+                else:
+                    st.subheader("Comece agora mesmo")
+                    novo_email = st.text_input("E-mail", placeholder="exemplo@email.com")
+                    nova_senha = st.text_input("Crie uma senha", type='password', placeholder="mínimo 6 caracteres")
+                    
+                    if st.button("CRIAR MINHA CONTA"):
+                        try:
+                            supabase.auth.sign_up({"email": novo_email, "password": nova_senha})
+                            st.success("Conta criada! Verifique seu e-mail para confirmar e depois faça login.")
+                        except Exception as e:
+                            st.error(f"Erro ao cadastrar: {e}")
+
     else:
-        # HEADER COM NOME DE EXIBIÇÃO
+        # --- SISTEMA APÓS LOGIN ---
         col_title, col_user = st.columns([3, 1])
         with col_title:
-            st.title(f"💰 Olá, {st.session_state.get('user_name', 'Usuário')}")
+            # Uso do .get para evitar o erro de Attribute se o nome estiver vazio
+            nome = st.session_state.get('user_name', 'Usuário')
+            st.title(f"💰 Olá, {nome}")
+            
         with col_user:
             with st.expander(f"👤 Perfil"):
-                st.write(f"Conectado como: {st.session_state.user_email}")
-                if st.button("Sair"):
+                st.write(f"ID: {st.session_state.user_email}")
+                if st.button("Encerrar Sessão"):
                     st.session_state.logado = False
                     st.session_state.user_name = ""
                     st.rerun()
 
-        # DADOS
+        # --- BUSCA DE DADOS ---
         res_c = supabase.table("my_cards").select("*").eq("user_email", st.session_state.user_email).execute()
         lista_cartoes = [item['card_name'] for item in res_c.data]
         dict_cartoes = {item['card_name']: item['id'] for item in res_c.data}
@@ -141,7 +141,7 @@ def main():
             with st.form("form_mobile", clear_on_submit=True):
                 col1, col2 = st.columns(2)
                 tipo = col1.selectbox("Tipo", ["Despesa", "Receita"])
-                desc = col2.text_input("Descrição (ex: Aluguel, Supermercado)")
+                desc = col2.text_input("Descrição")
                 
                 col3, col4 = st.columns(2)
                 valor_total = col3.number_input("Valor Total (R$)", min_value=0.01, step=0.10)
@@ -162,7 +162,7 @@ def main():
                             "payment_method": metodo_sel, "card_name": cart_vontade,
                             "installment_total": int(total_parc), "installment_number": i + 1
                         }).execute()
-                    st.success("✅ Lançamento realizado!")
+                    st.success("✅ Lançado!")
                     st.rerun()
 
         with tab_extrato:
@@ -174,16 +174,15 @@ def main():
                 try: default_idx = meses_disponiveis.index(mes_atual_str)
                 except: default_idx = len(meses_disponiveis) - 1
 
-                st.write("**Selecione o Mês:**")
-                mes_sel = st.radio("Meses", meses_disponiveis, index=default_idx, horizontal=True, label_visibility="collapsed")
+                mes_sel = st.radio("Filtrar Período:", meses_disponiveis, index=default_idx, horizontal=True)
                 
                 f = df[df['Mês'] == mes_sel].copy().sort_values(by='date', ascending=False)
                 
                 m1, m2, m3 = st.columns(3)
                 rec_total = f[f['type'] == 'Receita']['amount'].sum()
                 des_total = f[f['type'] == 'Despesa']['amount'].sum()
-                m1.metric("Receitas", f"R$ {rec_total:,.2f}", delta_color="normal")
-                m2.metric("Despesas", f"R$ {des_total:,.2f}", delta="-", delta_color="inverse")
+                m1.metric("Receitas", f"R$ {rec_total:,.2f}")
+                m2.metric("Despesas", f"R$ {des_total:,.2f}")
                 m3.metric("Saldo", f"R$ {rec_total-des_total:,.2f}")
 
                 st.markdown("---")
@@ -195,15 +194,13 @@ def main():
                     if not df_rec.empty:
                         df_rec['date'] = df_rec['date'].dt.strftime('%d/%m')
                         st.dataframe(df_rec, use_container_width=True, hide_index=True)
-                    else: st.info("Sem entradas.")
-
+                
                 with col_des:
                     st.markdown("### 🔴 Saídas")
                     df_des = f[f['type'] == 'Despesa'][['date', 'category', 'amount']].copy()
                     if not df_des.empty:
                         df_des['date'] = df_des['date'].dt.strftime('%d/%m')
                         st.dataframe(df_des, use_container_width=True, hide_index=True)
-                    else: st.info("Sem saídas.")
             else: st.info("Nenhum dado encontrado.")
 
         with tab_cartao:
@@ -213,36 +210,26 @@ def main():
                 hoje = datetime.now()
                 
                 for nome_cartao in lista_cartoes:
-                    with st.container():
-                        st.markdown(f"""
-                            <div style="background-color: white; padding: 20px; border-radius: 15px; border-left: 5px solid #2E6FF2; margin-bottom: 20px; box-shadow: 0 2px 4px rgba(0,0,0,0.05);">
-                                <h3 style="margin:0;">💳 {nome_cartao}</h3>
-                            </div>
-                        """, unsafe_allow_html=True)
-                        
+                    with st.container(border=True):
+                        st.subheader(f"💳 {nome_cartao}")
                         dados_este_cartao = df_c[df_c['card_name'] == nome_cartao]
                         if not dados_este_cartao.empty:
                             total_fatura = dados_este_cartao[dados_este_cartao['date'].dt.strftime('%m/%Y') == hoje.strftime('%m/%Y')]['amount'].sum()
-                            c1, c2 = st.columns([1, 2])
-                            c1.metric("Fatura Atual", f"R$ {total_fatura:,.2f}")
+                            st.metric("Fatura do Mês", f"R$ {total_fatura:,.2f}")
                             
-                            resumo_cartao = []
+                            resumo = []
                             for (desc, total), grupo in dados_este_cartao.groupby(['category', 'installment_total']):
                                 grupo = grupo.sort_values('date')
                                 proximas = grupo[grupo['date'] >= hoje.replace(day=1)]
                                 if not proximas.empty:
-                                    parc_at = proximas.iloc[0]['installment_number']
-                                    venc = proximas.iloc[0]['date']
-                                    resumo_cartao.append({
-                                        'Vencimento': venc.strftime('%d/%m'),
-                                        'Descrição': desc,
-                                        'Parcela': f"{int(parc_at)}/{int(total)}",
-                                        'Valor Parcela': f"R$ {proximas.iloc[0]['amount']:,.2f}"
+                                    resumo.append({
+                                        'Venc.': proximas.iloc[0]['date'].strftime('%d/%m'),
+                                        'Item': desc,
+                                        'Parc.': f"{int(proximas.iloc[0]['installment_number'])}/{int(total)}",
+                                        'Valor': f"R$ {proximas.iloc[0]['amount']:,.2f}"
                                     })
-                            if resumo_cartao:
-                                with c2: st.table(pd.DataFrame(resumo_cartao))
-                        else: st.caption("Sem gastos neste cartão.")
-            else: st.info("Cadastre cartões para ver o resumo.")
+                            st.table(pd.DataFrame(resumo))
+            else: st.info("Cadastre cartões nos ajustes.")
 
         with tab_gerenciar:
             if not df.empty:
@@ -257,9 +244,8 @@ def main():
                 opcoes = {}
                 for _, r in df_grouped.iterrows():
                     v_total = float(r['amount']) * int(r['installment_total'])
-                    prefixo = "💰" if r['type'] == 'Receita' else ("💳" if r['payment_method'] == "Cartão de Crédito" else "💵")
-                    parc_txt = f" [{int(r['installment_total'])}x]" if r['payment_method'] == "Cartão de Crédito" else ""
-                    label = f"{prefixo} {r['date'].strftime('%d/%m/%y')} | {r['category']}{parc_txt} - R${v_total:,.2f}"
+                    prefixo = "💰" if r['type'] == 'Receita' else "💸"
+                    label = f"{prefixo} {r['date'].strftime('%d/%m/%y')} | {r['category']} - R${v_total:,.2f}"
                     opcoes[label] = r['id']
                 
                 item_sel = st.selectbox("Selecione o registro para editar", list(opcoes.keys()))
@@ -272,7 +258,7 @@ def main():
                     n_data_base = st.date_input("Alterar Data", pd.to_datetime(d_at['date']))
                     
                     c1, c2 = st.columns(2)
-                    if c1.form_submit_button("💾 ATUALIZAR TUDO"):
+                    if c1.form_submit_button("💾 ATUALIZAR"):
                         relacionadas = df[(df['category'] == d_at['category']) & (df['installment_total'] == d_at['installment_total']) & (df['type'] == d_at['type'])]
                         v_nova_parc = n_valor_full / int(d_at['installment_total'])
                         for idx, row in relacionadas.iterrows():
@@ -281,20 +267,18 @@ def main():
                         st.success("Atualizado!")
                         st.rerun()
                         
-                    if c2.form_submit_button("🗑️ EXCLUIR REGISTRO"):
+                    if c2.form_submit_button("🗑️ EXCLUIR"):
                         relacionadas = df[(df['category'] == d_at['category']) & (df['installment_total'] == d_at['installment_total']) & (df['type'] == d_at['type'])]
                         for _, row in relacionadas.iterrows():
                             supabase.table("profile_transactions").delete().eq("id", row['id']).execute()
-                        st.warning("Excluído.")
                         st.rerun()
 
         with tab_config:
-            st.subheader("Configurações do App")
+            st.subheader("Ajustes")
             col_a, col_b = st.columns(2)
             with col_a:
-                st.write("**Gerenciar Cartões**")
                 n_c = st.text_input("Nome do Novo Cartão")
-                if st.button("Adicionar"):
+                if st.button("Adicionar Cartão"):
                     if n_c:
                         supabase.table("my_cards").insert({"user_email": st.session_state.user_email, "card_name": n_c}).execute()
                         st.rerun()
