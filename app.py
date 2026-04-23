@@ -27,20 +27,21 @@ def main():
     # --- CONFIGURAÇÃO MOBILE-FRIENDLY ---
     st.set_page_config(page_title="ContabilApp Pro", layout="wide", page_icon="💰")
     
-    # CSS Customizado para Mobile (Aumentando áreas de toque e legibilidade)
+    # CSS Customizado para Mobile
     st.markdown("""
         <style>
-        /* Ajuste para telas pequenas */
         @media (max-width: 640px) {
-            .stMetric { padding: 10px !important; }
-            .stMetric div { font-size: 0.8rem !important; }
-            .stTabs [data-baseweb="tab-list"] { gap: 8px; }
-            .stTabs [data-baseweb="tab"] { padding: 8px 4px; font-size: 12px; }
-            h1 { font-size: 1.5rem !important; }
+            .stMetric { padding: 5px !important; }
+            .stMetric div { font-size: 0.75rem !important; }
+            .stTabs [data-baseweb="tab-list"] { gap: 4px; }
+            .stTabs [data-baseweb="tab"] { padding: 8px 2px; font-size: 11px; }
+            h1 { font-size: 1.4rem !important; }
         }
         .stButton>button { width: 100%; border-radius: 8px; height: 3.5em; font-weight: bold; }
         .main { background-color: #f8f9fa; }
         div[data-testid="stExpander"] { background: white; border-radius: 12px; }
+        /* Estilo para os cards do extrato */
+        [data-testid="stVerticalBlockBorderWrapper"] { margin-bottom: -10px; }
         </style>
     """, unsafe_allow_html=True)
     
@@ -78,8 +79,6 @@ def main():
 
         with tab_lanc:
             st.subheader("Nova Movimentação")
-            
-            # No mobile, selectboxes empilhados são melhores
             metodo_sel = st.selectbox("Forma de Pagamento", ["Dinheiro/PIX", "Cartão de Crédito"], key="metodo_pag")
             
             cart_vontade = None
@@ -117,27 +116,40 @@ def main():
             if not df.empty:
                 df['date'] = pd.to_datetime(df['date'])
                 df['Mês'] = df['date'].dt.strftime('%m/%Y')
-                mes_sel = st.selectbox("Mês", sorted(df['Mês'].unique(), reverse=True))
+                mes_sel = st.selectbox("Selecione o Mês", sorted(df['Mês'].unique(), reverse=True))
                 
-                f = df[df['Mês'] == mes_sel].copy().sort_values(by='date')
-                f['Parcela'] = f.apply(lambda x: f"{int(x['installment_number'])}/{int(x['installment_total'])}" if x['payment_method'] == "Cartão de Crédito" else "À vista", axis=1)
-                f['Receita (R$)'] = f.apply(lambda x: float(x['amount']) if x['type'] == 'Receita' else 0.0, axis=1)
-                f['Despesa (R$)'] = f.apply(lambda x: float(x['amount']) if x['type'] == 'Despesa' else 0.0, axis=1)
+                f = df[df['Mês'] == mes_sel].copy().sort_values(by='date', ascending=False)
                 
-                # Métricas em colunas que empilham no celular
-                st.metric("Receitas", f"R$ {f['Receita (R$)'].sum():,.2f}")
-                st.metric("Despesas", f"R$ {f['Despesa (R$)'].sum():,.2f}")
-                st.metric("Saldo", f"R$ {f['Receita (R$)'].sum() - f['Despesa (R$)'].sum():,.2f}")
+                # Resumo em Métricas (3 colunas)
+                m1, m2, m3 = st.columns(3)
+                rec = f[f['type'] == 'Receita']['amount'].sum()
+                des = f[f['type'] == 'Despesa']['amount'].sum()
+                m1.metric("Receitas", f"R${rec:,.2f}")
+                m2.metric("Despesas", f"R${des:,.2f}")
+                m3.metric("Saldo", f"R${rec-des:,.2f}")
 
                 st.markdown("---")
-                exibicao = f[['date', 'category', 'Parcela', 'Receita (R$)', 'Despesa (R$)']].copy()
-                exibicao['date'] = exibicao['date'].dt.strftime('%d/%m')
-                for col in ['Receita (R$)', 'Despesa (R$)']:
-                    exibicao[col] = exibicao[col].map('R$ {:,.2f}'.format)
-
-                # No mobile, usamos use_container_width para tabelas
-                st.dataframe(exibicao, use_container_width=True, hide_index=True)
-            else: st.info("Sem dados.")
+                
+                # LISTA EM CARDS (Layout Mobile-First)
+                for _, row in f.iterrows():
+                    with st.container(border=True):
+                        c_info, c_valor = st.columns([2, 1])
+                        
+                        with c_info:
+                            st.markdown(f"**{row['category']}**")
+                            # Formatação de detalhes
+                            data_str = row['date'].strftime('%d/%m')
+                            if row['payment_method'] == "Cartão de Crédito":
+                                st.caption(f"📅 {data_str} • 💳 {int(row['installment_number'])}/{int(row['installment_total'])}")
+                            else:
+                                st.caption(f"📅 {data_str} • 💵 À vista")
+                        
+                        with c_valor:
+                            cor = "#2ECC71" if row['type'] == 'Receita' else "#E74C3C"
+                            simbolo = "+" if row['type'] == 'Receita' else "-"
+                            st.markdown(f"<p style='text-align:right; color:{cor}; font-weight:bold; margin-top:5px;'> {simbolo} R$ {row['amount']:,.2f}</p>", unsafe_allow_html=True)
+            else:
+                st.info("Sem dados.")
 
         with tab_cartao:
             if not df.empty:
