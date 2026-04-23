@@ -176,14 +176,16 @@ def main():
                 df_edit = df.copy()
                 df_edit['date'] = pd.to_datetime(df_edit['date'])
                 
-                # Agrupa tudo para mostrar valores totais e evitar duplicidade de parcelas na lista
+                # Tratamento para não ignorar PIX/Receitas no agrupamento
+                df_edit['card_name'] = df_edit['card_name'].fillna('N/A')
+                
+                # Agrupamento para consolidar parcelas de cartão e manter individuais os demais
                 df_edit = df_edit.sort_values(['category', 'card_name', 'installment_total', 'date'])
-                df_grouped = df_edit.groupby(['category', 'card_name', 'installment_total', 'payment_method', 'type'], as_index=False).first()
+                df_grouped = df_edit.groupby(['category', 'card_name', 'installment_total', 'payment_method', 'type'], as_index=False, dropna=False).first()
                 df_grouped = df_grouped.sort_values(by='date', ascending=False)
                 
                 opcoes = {}
                 for _, r in df_grouped.iterrows():
-                    # Valor total (Valor da parcela * Total de parcelas)
                     v_total = float(r['amount']) * int(r['installment_total'])
                     
                     if r['type'] == 'Receita':
@@ -199,43 +201,46 @@ def main():
                 id_alvo = opcoes[item_sel]
                 d_at = df[df['id'] == id_alvo].iloc[0]
 
-                # Calcula o valor total atual para preencher o campo de edição
-                valor_total_atual = float(d_at['amount']) * int(d_at['installment_total'])
+                valor_total_compra = float(d_at['amount']) * int(d_at['installment_total'])
 
-                with st.form("edit_master_form"):
-                    st.write(f"Editando: **{d_at['type']}** via **{d_at['payment_method']}**")
+                with st.form("edit_full_management"):
+                    st.write(f"Tipo: **{d_at['type']}** | Método: **{d_at['payment_method']}**")
                     n_desc = st.text_input("Descrição / Categoria", value=d_at['category'])
-                    n_valor_full = st.number_input("Valor Total", value=valor_total_atual)
-                    n_data_base = st.date_input("Data (Referência 1ª Parcela)", pd.to_datetime(d_at['date']))
+                    n_valor_full = st.number_input("Valor Total", value=valor_total_compra)
+                    n_data_base = st.date_input("Data Original", pd.to_datetime(d_at['date']))
                     
                     if st.form_submit_button("💾 Salvar Alterações"):
-                        # Busca todas as parcelas desse lançamento específico
+                        # Localiza todas as parcelas vinculadas (usando a referência original do banco)
                         relacionadas = df[(df['category'] == d_at['category']) & 
-                                         (df['card_name'] == d_at['card_name']) & 
                                          (df['installment_total'] == d_at['installment_total']) &
                                          (df['type'] == d_at['type'])]
                         
+                        # Filtro adicional por cartão se não for nulo no registro original
+                        if pd.notna(d_at['card_name']):
+                            relacionadas = relacionadas[relacionadas['card_name'] == d_at['card_name']]
+
                         v_nova_parc = n_valor_full / int(d_at['installment_total'])
                         
                         for idx, row in relacionadas.iterrows():
-                            # Recalcula a data de cada parcela baseada na nova data inicial
                             nova_data = add_months(n_data_base, int(row['installment_number']) - 1)
                             supabase.table("profile_transactions").update({
                                 "category": n_desc, 
                                 "amount": round(v_nova_parc, 2), 
                                 "date": nova_data.strftime("%Y-%m-%d")
                             }).eq("id", row['id']).execute()
-                        st.success("Lançamento atualizado!")
+                        st.success("Dados atualizados!")
                         st.rerun()
                         
-                    if st.form_submit_button("🗑️ Excluir Registro Completo"):
+                    if st.form_submit_button("🗑️ Excluir Registro"):
                         relacionadas = df[(df['category'] == d_at['category']) & 
-                                         (df['card_name'] == d_at['card_name']) & 
                                          (df['installment_total'] == d_at['installment_total']) &
                                          (df['type'] == d_at['type'])]
+                        if pd.notna(d_at['card_name']):
+                            relacionadas = relacionadas[relacionadas['card_name'] == d_at['card_name']]
+                            
                         for _, row in relacionadas.iterrows():
                             supabase.table("profile_transactions").delete().eq("id", row['id']).execute()
-                        st.warning("Registro e todas as suas parcelas foram removidos.")
+                        st.warning("Removido com sucesso.")
                         st.rerun()
 
         with tab_config:
