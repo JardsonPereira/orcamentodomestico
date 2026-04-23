@@ -182,13 +182,13 @@ def main():
                     df_rec = f[f['type'] == 'Receita'][['date', 'category', 'amount']].copy()
                     if not df_rec.empty:
                         df_rec['date'] = df_rec['date'].dt.strftime('%d/%m')
+                        df_rec['amount'] = df_rec['amount'].apply(lambda x: f"R$ {x:,.2f}")
                         st.dataframe(df_rec, use_container_width=True, hide_index=True)
                 
                 with col_des:
                     st.markdown("### 🔴 Saídas")
                     df_des = f[f['type'] == 'Despesa'].copy()
                     if not df_des.empty:
-                        # Lógica para mostrar parcelas e quanto falta
                         def format_installment(row):
                             if row['payment_method'] == "Cartão de Crédito":
                                 atual = int(row['installment_number'])
@@ -198,6 +198,7 @@ def main():
                             return "À vista"
 
                         df_des['Info Parcelas'] = df_des.apply(format_installment, axis=1)
+                        df_des['amount'] = df_des['amount'].apply(lambda x: f"R$ {x:,.2f}")
                         df_des_view = df_des[['date', 'category', 'amount', 'Info Parcelas']]
                         df_des_view['date'] = df_des_view['date'].dt.strftime('%d/%m')
                         st.dataframe(df_des_view, use_container_width=True, hide_index=True)
@@ -228,7 +229,8 @@ def main():
                                         'Parc.': f"{int(proximas.iloc[0]['installment_number'])}/{int(total)}",
                                         'Valor': f"R$ {proximas.iloc[0]['amount']:,.2f}"
                                     })
-                            st.table(pd.DataFrame(resumo))
+                            if resumo:
+                                st.table(pd.DataFrame(resumo))
             else: st.info("Cadastre cartões nos ajustes.")
 
         with tab_gerenciar:
@@ -245,7 +247,7 @@ def main():
                 for _, r in df_grouped.iterrows():
                     v_total = float(r['amount']) * int(r['installment_total'])
                     prefixo = "💰" if r['type'] == 'Receita' else "💸"
-                    label = f"{prefixo} {r['date'].strftime('%d/%m/%y')} | {r['category']} - R${v_total:,.2f}"
+                    label = f"{prefixo} {r['date'].strftime('%d/%m/%y')} | {r['category']} - R$ {v_total:,.2f}"
                     opcoes[label] = r['id']
                 
                 item_sel = st.selectbox("Selecione o registro para editar", list(opcoes.keys()))
@@ -254,7 +256,7 @@ def main():
 
                 with st.form("edit_form"):
                     n_desc = st.text_input("Alterar Descrição", value=d_at['category'])
-                    n_valor_full = st.number_input("Alterar Valor Total", value=float(d_at['amount']) * int(d_at['installment_total']))
+                    n_valor_full = st.number_input("Alterar Valor Total (R$)", value=float(d_at['amount']) * int(d_at['installment_total']))
                     n_data_base = st.date_input("Alterar Data", pd.to_datetime(d_at['date']))
                     
                     c1, c2 = st.columns(2)
