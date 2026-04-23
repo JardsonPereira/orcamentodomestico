@@ -27,68 +27,107 @@ def add_months(sourcedate, months):
     return datetime(year, month, day)
 
 def main():
-    # --- CONFIGURAÇÃO MOBILE-FRIENDLY ---
+    # --- CONFIGURAÇÃO VISUAL MOBILE-FIRST ---
     st.set_page_config(page_title="ContabilApp Pro", layout="wide", page_icon="💰")
     
-    # CSS Customizado para Mobile (Foco em toque e legibilidade)
     st.markdown("""
         <style>
-        @media (max-width: 640px) {
-            .stMetric { padding: 10px !important; }
-            .stMetric div { font-size: 0.8rem !important; }
-            .stTabs [data-baseweb="tab-list"] { gap: 8px; }
-            .stTabs [data-baseweb="tab"] { padding: 8px 4px; font-size: 12px; }
-            h1 { font-size: 1.5rem !important; }
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap');
+        
+        /* Reset e Fontes */
+        html, body, [class*="st-"] { font-family: 'Inter', sans-serif; }
+        .stApp { background-color: #F8F9FB; }
+        
+        /* Ajuste de Margens Laterais para Mobile */
+        .block-container { padding: 1rem 0.8rem !important; }
+
+        /* Estilização de Cards e Forms */
+        [data-testid="stExpander"], div[data-testid="stForm"], .stContainer {
+            background-color: white !important;
+            border-radius: 12px !important;
+            border: 1px solid #E6E9EF !important;
+            padding: 15px;
+            margin-bottom: 10px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.02);
         }
-        .stButton>button { width: 100%; border-radius: 8px; height: 3.5em; font-weight: bold; }
-        .main { background-color: #f8f9fa; }
-        div[data-testid="stExpander"], div[data-testid="stForm"], .stContainer { 
-            background: white; border-radius: 12px; border: 1px solid #eee; padding: 10px; margin-bottom: 10px;
+
+        /* Botões Estilizados */
+        .stButton>button {
+            width: 100%;
+            border-radius: 8px;
+            height: 3.2em;
+            font-weight: 600;
+            background-color: #007BFF;
+            color: white;
+            border: none;
+        }
+
+        /* Tabelas e Dataframes */
+        .stDataFrame { border-radius: 8px; overflow: hidden; }
+        
+        /* Responsividade das Métricas */
+        @media (max-width: 640px) {
+            [data-testid="stMetric"] { 
+                padding: 10px !important; 
+                background: white; 
+                border-radius: 10px; 
+                border: 1px solid #EEE;
+            }
+            .stTabs [data-baseweb="tab-list"] { gap: 2px; }
+            .stTabs [data-baseweb="tab"] { padding: 5px 8px; font-size: 11px; }
         }
         </style>
     """, unsafe_allow_html=True)
     
     if not st.session_state.logado:
-        st.markdown("<h1 style='text-align: center;'>💰 ContabilApp</h1>", unsafe_allow_html=True)
+        # --- TELA DE ACESSO ---
+        st.markdown("<h1 style='text-align: center; color: #1E293B;'>💰 ContabilApp</h1>", unsafe_allow_html=True)
         
         _, col_central, _ = st.columns([0.1, 0.8, 0.1])
         with col_central:
-            escolha = st.radio("Acesso", ["Entrar", "Criar Conta"], horizontal=True, label_visibility="collapsed")
+            escolha = st.radio("Ação", ["Entrar", "Criar Conta"], horizontal=True, label_visibility="collapsed")
             
             with st.container():
                 if escolha == "Entrar":
+                    st.subheader("Login")
                     email = st.text_input("E-mail")
                     senha = st.text_input("Senha", type='password')
-                    nome_exibicao = st.text_input("Seu Nome")
+                    nome_login = st.text_input("Seu Nome")
+                    
                     if st.button("ACESSAR"):
                         try:
                             supabase.auth.sign_in_with_password({"email": email, "password": senha})
                             st.session_state.logado = True
                             st.session_state.user_email = email
-                            st.session_state.user_name = nome_exibicao
+                            st.session_state.user_name = nome_login
                             st.rerun()
-                        except: st.error("Dados incorretos.")
+                        except: st.error("Erro no login. Verifique os dados.")
+                            
                 else:
-                    n_email = st.text_input("E-mail (Novo)")
-                    n_senha = st.text_input("Senha (Novo)", type='password')
-                    n_nome = st.text_input("Nome (Novo)")
-                    if st.button("CADASTRAR"):
+                    st.subheader("Cadastro rápido")
+                    novo_nome = st.text_input("Nome")
+                    novo_email = st.text_input("E-mail")
+                    nova_senha = st.text_input("Senha", type='password')
+                    
+                    if st.button("FINALIZAR CADASTRO"):
                         try:
-                            supabase.auth.sign_up({"email": n_email, "password": n_senha})
+                            supabase.auth.sign_up({"email": novo_email, "password": nova_senha})
                             st.session_state.logado = True
-                            st.session_state.user_email = n_email
-                            st.session_state.user_name = n_nome
+                            st.session_state.user_email = novo_email
+                            st.session_state.user_name = novo_nome
+                            st.success("Conta criada!")
                             st.rerun()
-                        except: st.error("Erro no cadastro.")
+                        except: st.error("Erro ao criar conta.")
+
     else:
-        # --- HEADER ---
-        c_h1, c_h2 = st.columns([3, 1])
-        c_h1.markdown(f"### Olá, {st.session_state.get('user_name', 'Usuário')}")
-        if c_h2.button("Sair"):
+        # --- APP PRINCIPAL ---
+        header_col, logout_col = st.columns([4, 1])
+        header_col.markdown(f"### Olá, **{st.session_state.get('user_name', 'Usuário')}** 👋")
+        if logout_col.button("Sair"):
             st.session_state.logado = False
             st.rerun()
 
-        # --- BUSCA DE DADOS ---
+        # Busca de Dados
         res_c = supabase.table("my_cards").select("*").eq("user_email", st.session_state.user_email).execute()
         lista_cartoes = [item['card_name'] for item in res_c.data]
         dict_cartoes = {item['card_name']: item['id'] for item in res_c.data}
@@ -96,38 +135,44 @@ def main():
         res_f = supabase.table("profile_transactions").select("*").eq("user_email", st.session_state.user_email).execute()
         df = pd.DataFrame(res_f.data)
 
+        # Abas Mobile (Ícones para economizar espaço)
         tab_lanc, tab_extrato, tab_cartao, tab_gerenciar, tab_config = st.tabs([
-            "➕ Lançar", "📊 Extrato", "💳 Cartão", "⚙️ Editar", "🛠️ Ajustes"
+            "➕ Lançar", "📊 Extrato", "💳 Cartões", "⚙️ Editar", "🛠️ Ajustes"
         ])
 
         with tab_lanc:
-            st.subheader("Nova Movimentação")
-            metodo_sel = st.selectbox("Forma de Pagamento", ["Dinheiro/PIX", "Cartão de Crédito"])
-            cart_v = None
-            if metodo_sel == "Cartão de Crédito":
-                if lista_cartoes: cart_v = st.selectbox("Qual Cartão?", lista_cartoes)
-                else: st.warning("Cadastre um cartão primeiro.")
+            st.subheader("Nova Transação")
+            metodo = st.selectbox("Forma de Pagamento", ["Dinheiro/PIX", "Cartão de Crédito"])
+            
+            cart_sel = None
+            if metodo == "Cartão de Crédito":
+                if lista_cartoes:
+                    cart_sel = st.selectbox("Qual cartão?", lista_cartoes)
+                else:
+                    st.warning("Cadastre um cartão na última aba.")
 
-            with st.form("form_lanca", clear_on_submit=True):
-                tipo = st.selectbox("Categoria", ["Despesa", "Receita"])
+            with st.form("form_novo", clear_on_submit=True):
+                tipo = st.selectbox("Tipo", ["Despesa", "Receita"])
                 desc = st.text_input("Descrição")
-                valor_t = st.number_input("Valor (R$)", min_value=0.01, step=0.10)
-                data_o = st.date_input("Data", datetime.now())
-                total_p = 1
-                if metodo_sel == "Cartão de Crédito":
-                    total_p = st.number_input("Parcelas", min_value=1, step=1)
+                valor = st.number_input("Valor Total (R$)", min_value=0.0, step=0.01)
+                data_in = st.date_input("Data", datetime.now())
+                
+                parc = 1
+                if metodo == "Cartão de Crédito":
+                    parc = st.number_input("Nº de Parcelas", min_value=1, step=1)
 
-                if st.form_submit_button("💾 Salvar"):
-                    v_parc = valor_t / int(total_p)
-                    for i in range(int(total_p)):
-                        d_venc = add_months(data_o, i)
+                if st.form_submit_button("💾 SALVAR"):
+                    u_email = st.session_state.user_email
+                    v_parc = valor / int(parc)
+                    for i in range(int(parc)):
+                        d_venc = add_months(data_in, i)
                         supabase.table("profile_transactions").insert({
-                            "user_email": st.session_state.user_email, "type": tipo, "category": desc,
+                            "user_email": u_email, "type": tipo, "category": desc,
                             "amount": round(v_parc, 2), "date": d_venc.strftime("%Y-%m-%d"),
-                            "payment_method": metodo_sel, "card_name": cart_v,
-                            "installment_total": int(total_p), "installment_number": i + 1
+                            "payment_method": metodo, "card_name": cart_sel,
+                            "installment_total": int(parc), "installment_number": i + 1
                         }).execute()
-                    st.success("Salvo!")
+                    st.success("Lançado!")
                     st.rerun()
 
         with tab_extrato:
@@ -135,83 +180,89 @@ def main():
                 df['date'] = pd.to_datetime(df['date'])
                 df['Mês'] = df['date'].dt.strftime('%m/%Y')
                 meses = sorted(df['Mês'].unique(), key=lambda x: datetime.strptime(x, '%m/%Y'))
-                mes_sel = st.radio("Meses", meses, index=len(meses)-1, horizontal=True)
                 
+                mes_sel = st.selectbox("Filtrar Mês", meses, index=len(meses)-1)
                 f = df[df['Mês'] == mes_sel].copy().sort_values(by='date', ascending=False)
+                
+                # Resumo financeiro
+                c1, c2 = st.columns(2)
                 rec = f[f['type'] == 'Receita']['amount'].sum()
                 des = f[f['type'] == 'Despesa']['amount'].sum()
-                
-                c1, c2, c3 = st.columns(3)
-                c1.metric("Rec.", f"R${rec:,.2f}")
-                c2.metric("Desp.", f"R${des:,.2f}")
-                c3.metric("Saldo", f"R${rec-des:,.2f}")
+                c1.metric("Ganhos", f"R$ {rec:,.2f}")
+                c2.metric("Gastos", f"R$ {des:,.2f}", delta=f"-{des:,.2f}", delta_color="inverse")
+                st.metric("Saldo Líquido", f"R$ {rec-des:,.2f}")
 
                 st.markdown("---")
-                # Layout de Lista Compacta
-                for _, row in f.iterrows():
-                    with st.container():
-                        col_i, col_v = st.columns([2, 1])
-                        cor = "#2ECC71" if row['type'] == 'Receita' else "#E74C3C"
-                        with col_i:
-                            st.markdown(f"**{row['category']}**")
-                            p_info = f"💳 {int(row['installment_number'])}/{int(row['installment_total'])}" if row['payment_method'] == "Cartão de Crédito" else "💵 À vista"
-                            st.caption(f"{row['date'].strftime('%d/%m')} • {p_info}")
-                        with col_v:
-                            st.markdown(f"<p style='text-align:right; color:{cor}; font-weight:bold;'>R$ {row['amount']:,.2f}</p>", unsafe_allow_html=True)
-            else: st.info("Sem dados.")
+                # Tabela organizada por Entradas/Saídas
+                col_e, col_s = st.columns(2)
+                with col_e:
+                    st.caption("🟢 Entradas")
+                    st.dataframe(f[f['type'] == 'Receita'][['date', 'category', 'amount']], use_container_width=True, hide_index=True)
+                with col_s:
+                    st.caption("🔴 Saídas")
+                    st.dataframe(f[f['type'] == 'Despesa'][['date', 'category', 'amount']], use_container_width=True, hide_index=True)
+            else: st.info("Sem lançamentos ainda.")
 
         with tab_cartao:
             if not df.empty and lista_cartoes:
                 df_c = df[df['payment_method'] == "Cartão de Crédito"].copy()
                 df_c['date'] = pd.to_datetime(df_c['date'])
-                for c in lista_cartoes:
+                for cartao in lista_cartoes:
                     with st.container():
-                        st.markdown(f"**💳 {c}**")
-                        dados = df_c[df_c['card_name'] == c]
+                        st.markdown(f"#### 💳 {cartao}")
+                        dados = df_c[df_c['card_name'] == cartao]
                         if not dados.empty:
-                            fat = dados[dados['date'].dt.strftime('%m/%Y') == datetime.now().strftime('%m/%Y')]['amount'].sum()
-                            st.metric("Fatura Atual", f"R$ {fat:,.2f}")
-                            st.dataframe(dados[['date', 'category', 'amount']], use_container_width=True, hide_index=True)
-            else: st.info("Sem cartões cadastrados.")
+                            mes_fatura = dados[dados['date'].dt.month == datetime.now().month]
+                            st.metric("Fatura Aberta", f"R$ {mes_fatura['amount'].sum():,.2f}")
+                        else: st.caption("Sem gastos registrados.")
+            else: st.info("Nenhum cartão cadastrado.")
 
         with tab_gerenciar:
             if not df.empty:
                 df_edit = df.copy()
                 df_edit['date'] = pd.to_datetime(df_edit['date'])
-                df_grouped = df_edit.sort_values(['category', 'card_name', 'installment_total', 'date'])
-                df_grouped = df_grouped.groupby(['category', 'card_name', 'installment_total', 'payment_method', 'type'], as_index=False, dropna=False).first()
+                # Agrupamento para edição total
+                df_grouped = df_edit.sort_values(['category', 'installment_total', 'date'])
+                df_grouped = df_grouped.groupby(['category', 'installment_total', 'type', 'payment_method'], as_index=False).first()
                 
-                opcoes = {f"{r['category']} | Total R${float(r['amount'])*int(r['installment_total']):.2f}": r['id'] for _, r in df_grouped.iterrows()}
-                item_s = st.selectbox("Escolha para Editar/Excluir", list(opcoes.keys()))
-                d_at = df[df['id'] == opcoes[item_s]].iloc[0]
-
-                with st.form("edit_form"):
-                    n_desc = st.text_input("Descrição", value=d_at['category'])
-                    n_valor_t = st.number_input("Valor Total", value=float(d_at['amount']) * int(d_at['installment_total']))
+                opcoes = {f"{r['category']} | {r['payment_method']} (Total: R${float(r['amount'])*int(r['installment_total']):.2f})": r['id'] for _, r in df_grouped.iterrows()}
+                item_sel = st.selectbox("O que deseja alterar?", list(opcoes.keys()))
+                
+                d_at = df[df['id'] == opcoes[item_sel]].iloc[0]
+                with st.form("edit_form_total"):
+                    st.write(f"Editando compra em: **{d_at['payment_method']}**")
+                    n_desc = st.text_input("Novo Nome", value=d_at['category'])
+                    n_valor_total = st.number_input("Novo Valor Total", value=float(d_at['amount']) * int(d_at['installment_total']))
                     
-                    if st.form_submit_button("SALVAR ALTERAÇÕES EM TUDO"):
-                        rel = df[(df['category'] == d_at['category']) & (df['installment_total'] == d_at['installment_total'])]
-                        v_p = n_valor_t / int(d_at['installment_total'])
-                        for _, r in rel.iterrows():
-                            supabase.table("profile_transactions").update({"category": n_desc, "amount": round(v_p, 2)}).eq("id", r['id']).execute()
+                    if st.form_submit_button("ATUALIZAR COMPRA COMPLETA"):
+                        # Atualiza todas as parcelas de uma vez
+                        valor_p = n_valor_total / int(d_at['installment_total'])
+                        supabase.table("profile_transactions").update({
+                            "category": n_desc, 
+                            "amount": round(valor_p, 2)
+                        }).eq("category", d_at['category']).eq("installment_total", d_at['installment_total']).execute()
+                        st.success("Alterado em todas as parcelas!")
                         st.rerun()
+                    
                     if st.form_submit_button("🗑️ EXCLUIR TUDO"):
-                        rel = df[(df['category'] == d_at['category']) & (df['installment_total'] == d_at['installment_total'])]
-                        for _, r in rel.iterrows():
-                            supabase.table("profile_transactions").delete().eq("id", r['id']).execute()
+                        supabase.table("profile_transactions").delete().eq("category", d_at['category']).eq("installment_total", d_at['installment_total']).execute()
                         st.rerun()
 
         with tab_config:
-            st.subheader("Ajustes")
-            n_c = st.text_input("Nome do Cartão")
-            if st.button("Adicionar"):
-                supabase.table("my_cards").insert({"user_email": st.session_state.user_email, "card_name": n_c}).execute()
-                st.rerun()
-            if lista_cartoes:
-                c_del = st.selectbox("Remover", lista_cartoes)
-                if st.button("Excluir"):
-                    supabase.table("my_cards").delete().eq("id", dict_cartoes[c_del]).execute()
-                    st.rerun()
+            st.subheader("Configurações")
+            c1, c2 = st.columns(2)
+            with c1:
+                n_cartao = st.text_input("Novo Cartão")
+                if st.button("ADICIONAR CARTÃO"):
+                    if n_cartao:
+                        supabase.table("my_cards").insert({"user_email": st.session_state.user_email, "card_name": n_cartao}).execute()
+                        st.rerun()
+            with c2:
+                if lista_cartoes:
+                    del_c = st.selectbox("Remover Cartão", lista_cartoes)
+                    if st.button("EXCLUIR CARTÃO"):
+                        supabase.table("my_cards").delete().eq("id", dict_cartoes[del_c]).execute()
+                        st.rerun()
 
 if __name__ == "__main__":
     main()
