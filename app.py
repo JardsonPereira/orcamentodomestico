@@ -116,8 +116,6 @@ def main():
                 mes_sel = st.radio("Meses", meses_disponiveis, index=default_idx, horizontal=True, label_visibility="collapsed")
                 
                 f = df[df['Mês'] == mes_sel].copy().sort_values(by='date', ascending=False)
-                
-                # Cabeçalho de Saldo
                 rec_total = f[f['type'] == 'Receita']['amount'].sum()
                 des_total = f[f['type'] == 'Despesa']['amount'].sum()
                 
@@ -127,10 +125,7 @@ def main():
                 col_m3.metric("Saldo", f"R${rec_total-des_total:,.2f}")
 
                 st.markdown("---")
-
-                # Layout de Tabela Lado a Lado
                 col_rec, col_des = st.columns(2)
-
                 with col_rec:
                     st.markdown("<h4 style='text-align: center; color: #2ECC71;'>Receitas</h4>", unsafe_allow_html=True)
                     df_rec = f[f['type'] == 'Receita'][['date', 'category', 'amount']].copy()
@@ -138,9 +133,7 @@ def main():
                         df_rec['date'] = df_rec['date'].dt.strftime('%d/%m')
                         df_rec.columns = ['Data', 'Item', 'Valor']
                         st.dataframe(df_rec, use_container_width=True, hide_index=True)
-                    else:
-                        st.caption("Sem receitas.")
-
+                    else: st.caption("Sem receitas.")
                 with col_des:
                     st.markdown("<h4 style='text-align: center; color: #E74C3C;'>Despesas</h4>", unsafe_allow_html=True)
                     df_des = f[f['type'] == 'Despesa'][['date', 'category', 'amount']].copy()
@@ -148,10 +141,8 @@ def main():
                         df_des['date'] = df_des['date'].dt.strftime('%d/%m')
                         df_des.columns = ['Data', 'Item', 'Valor']
                         st.dataframe(df_des, use_container_width=True, hide_index=True)
-                    else:
-                        st.caption("Sem despesas.")
-            else:
-                st.info("Nenhuma movimentação neste período.")
+                    else: st.caption("Sem despesas.")
+            else: st.info("Nenhuma movimentação neste período.")
 
         with tab_cartao:
             if not df.empty and lista_cartoes:
@@ -182,51 +173,41 @@ def main():
 
         with tab_gerenciar:
             if not df.empty:
-                df_edit = df.copy()
-                df_edit['date'] = pd.to_datetime(df_edit['date'])
-                df_edit = df_edit.sort_values(['category', 'card_name', 'installment_total', 'date'])
-                df_grouped = df_edit.groupby(['category', 'card_name', 'installment_total', 'payment_method'], as_index=False).first()
-                df_grouped = df_grouped.sort_values(by='date', ascending=False)
-
-                opcoes = {f"{r['date'].strftime('%d/%m')} | {r['category']} (Total)": r['id'] for _, r in df_grouped.iterrows()}
-                item_sel = st.selectbox("Selecione para Editar/Excluir", list(opcoes.keys()))
-                id_alvo = opcoes[item_sel]
-                d_at = df[df['id'] == id_alvo].iloc[0]
-
-                valor_exibido = float(d_at['amount'])
-                if d_at['payment_method'] == "Cartão de Crédito":
-                    valor_exibido = float(d_at['amount']) * int(d_at['installment_total'])
-
-                with st.form("edit_mobile"):
-                    n_desc = st.text_input("Descrição", value=d_at['category'])
-                    n_valor = st.number_input("Valor Total do Lançamento", value=valor_exibido)
-                    n_data = st.date_input("Data Original", pd.to_datetime(d_at['date']))
+                # --- FILTRO EXCLUSIVO PARA DINHEIRO/PIX ---
+                df_view = df.copy()
+                df_view['date'] = pd.to_datetime(df_view['date'])
+                df_view = df_view[df_view['payment_method'] == "Dinheiro/PIX"].sort_values(by='date', ascending=False)
+                
+                if not df_view.empty:
+                    opcoes = {}
+                    for _, r in df_view.iterrows():
+                        label = f"{r['date'].strftime('%d/%m/%y')} | {r['category']} - R${float(r['amount']):.2f}"
+                        opcoes[label] = r['id']
                     
-                    st.info("⚠️ Alterações serão aplicadas a todas as parcelas.")
-                    
-                    if st.form_submit_button("Salvar Alterações em Tudo"):
-                        relacionadas = df[(df['category'] == d_at['category']) & 
-                                         (df['card_name'] == d_at['card_name']) & 
-                                         (df['installment_total'] == d_at['installment_total'])]
-                        v_parc_novo = n_valor / int(d_at['installment_total'])
-                        for idx, row in relacionadas.iterrows():
-                            nova_data_parc = add_months(n_data, int(row['installment_number']) - 1)
+                    item_sel = st.selectbox("Selecione o lançamento (Dinheiro/PIX)", list(opcoes.keys()))
+                    id_alvo = opcoes[item_sel]
+                    d_at = df[df['id'] == id_alvo].iloc[0]
+
+                    with st.form("edit_mobile_pix"):
+                        n_desc = st.text_input("Descrição", value=d_at['category'])
+                        n_valor = st.number_input("Valor", value=float(d_at['amount']))
+                        n_data = st.date_input("Data", pd.to_datetime(d_at['date']))
+                        
+                        if st.form_submit_button("Salvar Alterações"):
                             supabase.table("profile_transactions").update({
                                 "category": n_desc, 
-                                "amount": round(v_parc_novo, 2), 
-                                "date": nova_data_parc.strftime("%Y-%m-%d")
-                            }).eq("id", row['id']).execute()
-                        st.success("Atualizado!")
-                        st.rerun()
-                        
-                    if st.form_submit_button("🗑️ Excluir Lançamento Completo"):
-                        relacionadas = df[(df['category'] == d_at['category']) & 
-                                         (df['card_name'] == d_at['card_name']) & 
-                                         (df['installment_total'] == d_at['installment_total'])]
-                        for _, row in relacionadas.iterrows():
-                            supabase.table("profile_transactions").delete().eq("id", row['id']).execute()
-                        st.warning("Excluído.")
-                        st.rerun()
+                                "amount": round(n_valor, 2), 
+                                "date": n_data.strftime("%Y-%m-%d")
+                            }).eq("id", id_alvo).execute()
+                            st.success("Atualizado!")
+                            st.rerun()
+                            
+                        if st.form_submit_button("🗑️ Excluir Registro"):
+                            supabase.table("profile_transactions").delete().eq("id", id_alvo).execute()
+                            st.warning("Excluído.")
+                            st.rerun()
+                else:
+                    st.info("Nenhum lançamento em Dinheiro/PIX encontrado.")
 
         with tab_config:
             st.write("**Gerenciar Cartões**")
