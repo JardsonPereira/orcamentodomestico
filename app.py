@@ -27,7 +27,7 @@ def main():
     # --- CONFIGURAÇÃO MOBILE-FRIENDLY ---
     st.set_page_config(page_title="ContabilApp Pro", layout="wide", page_icon="💰")
     
-    # CSS Customizado para Mobile
+    # CSS Customizado para Mobile e Estilização do Radio como Botões
     st.markdown("""
         <style>
         @media (max-width: 640px) {
@@ -40,6 +40,9 @@ def main():
         .stButton>button { width: 100%; border-radius: 8px; height: 3.5em; font-weight: bold; }
         .main { background-color: #f8f9fa; }
         div[data-testid="stExpander"] { background: white; border-radius: 12px; }
+        
+        /* Ajuste para o seletor de meses horizontal */
+        div[data-testid="stMarkdownContainer"] > p { font-weight: bold; margin-bottom: -10px; }
         </style>
     """, unsafe_allow_html=True)
     
@@ -115,18 +118,23 @@ def main():
                 df['date'] = pd.to_datetime(df['date'])
                 df['Mês'] = df['date'].dt.strftime('%m/%Y')
                 
-                # --- SELETOR DE MÊS EM COLUNA ---
-                meses_disponiveis = sorted(df['Mês'].unique(), reverse=True)
+                # Ordenar meses para a exibição (do mais antigo para o mais novo)
+                meses_disponiveis = sorted(df['Mês'].unique(), key=lambda x: datetime.strptime(x, '%m/%Y'))
                 mes_atual_str = datetime.now().strftime('%m/%Y')
                 
-                # Se o mês atual não tiver dados, ele usa o primeiro da lista
-                default_idx = meses_disponiveis.index(mes_atual_str) if mes_atual_str in meses_disponiveis else 0
-                
-                mes_sel = st.selectbox("Mês de Referência", meses_disponiveis, index=default_idx)
+                # Define o index padrão para o mês corrente
+                try:
+                    default_idx = meses_disponiveis.index(mes_atual_str)
+                except ValueError:
+                    default_idx = len(meses_disponiveis) - 1
+
+                # EXIBIÇÃO EM FORMATO DE COLUNAS (RADIO HORIZONTAL)
+                st.write("Período:")
+                mes_sel = st.radio("Seletor de Meses", meses_disponiveis, index=default_idx, horizontal=True, label_visibility="collapsed")
                 
                 f = df[df['Mês'] == mes_sel].copy().sort_values(by='date', ascending=False)
                 
-                # Métricas lado a lado
+                # Métricas
                 m1, m2, m3 = st.columns(3)
                 rec = f[f['type'] == 'Receita']['amount'].sum()
                 des = f[f['type'] == 'Despesa']['amount'].sum()
