@@ -76,7 +76,6 @@ def main():
                     
                     if st.button("ACESSAR SISTEMA"):
                         try:
-                            # Tenta fazer login
                             response = supabase.auth.sign_in_with_password({"email": email, "password": senha})
                             if response.user:
                                 st.session_state.logado = True
@@ -84,7 +83,7 @@ def main():
                                 st.session_state.user_name = nome_login if nome_login else "Usuário"
                                 st.rerun()
                         except Exception as e:
-                            st.error("E-mail ou senha incorretos ou conta não confirmada.")
+                            st.error("E-mail ou senha incorretos. Verifique se o e-mail foi confirmado.")
                             
                 else:
                     st.subheader("Cadastro")
@@ -94,28 +93,30 @@ def main():
                     
                     if st.button("CRIAR MINHA CONTA"):
                         if not novo_nome or not novo_email or len(nova_senha) < 6:
-                            st.warning("Preencha todos os campos corretamente.")
+                            st.warning("Preencha todos os campos. Senha deve ter 6+ caracteres.")
                         else:
                             try:
-                                # Cadastra o usuário
+                                # Registro no Supabase
                                 res = supabase.auth.sign_up({"email": novo_email, "password": nova_senha})
                                 
-                                # No Supabase, se o e-mail for criado, ele retorna um objeto mesmo com 'confirm email' ativo
+                                # Verificação robusta: se retornou usuário, logamos direto.
                                 if res.user:
-                                    st.session_state.logado = True
-                                    st.session_state.user_email = novo_email
-                                    st.session_state.user_name = novo_nome
-                                    st.success("Conta criada! Acessando...")
-                                    st.rerun()
+                                    # Se as identidades estiverem vazias, o e-mail já existe no banco
+                                    if hasattr(res.user, 'identities') and len(res.user.identities) == 0:
+                                        st.error("Este e-mail já está cadastrado. Tente fazer Login.")
+                                    else:
+                                        st.session_state.logado = True
+                                        st.session_state.user_email = novo_email
+                                        st.session_state.user_name = novo_nome
+                                        st.success("Conta criada com sucesso!")
+                                        st.rerun()
                             except Exception as e:
-                                # Se der erro aqui, é provável que o e-mail já exista no banco
-                                st.error("Erro ao cadastrar. Verifique se o e-mail já existe ou tente outro.")
+                                st.error(f"Erro técnico: {str(e)}")
 
     else:
         # --- SISTEMA LOGADO ---
         col_title, col_user = st.columns([3, 1])
         with col_title:
-            # Usar .get com fallback para evitar o erro de AttributeError se a chave sumir
             nome_display = st.session_state.get('user_name', 'Usuário')
             st.title(f"💰 Olá, {nome_display}")
         with col_user:
@@ -259,7 +260,6 @@ def main():
                         for idx, row in rel.iterrows():
                             nova_d = add_months(n_data_b, int(row['installment_number']) - 1)
                             supabase.table("profile_transactions").update({"category": n_desc, "amount": round(v_np, 2), "date": nova_d.strftime("%Y-%m-%d")}).eq("id", row['id']).execute()
-                        st.success("Atualizado!")
                         st.rerun()
                     if st.form_submit_button("🗑️ EXCLUIR TUDO"):
                         rel = df[(df['category'] == d_at['category']) & (df['installment_total'] == d_at['installment_total']) & (df['type'] == d_at['type'])]
