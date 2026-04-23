@@ -40,8 +40,6 @@ def main():
         .stButton>button { width: 100%; border-radius: 8px; height: 3.5em; font-weight: bold; }
         .main { background-color: #f8f9fa; }
         div[data-testid="stExpander"] { background: white; border-radius: 12px; }
-        /* Estilo para os cards do extrato */
-        [data-testid="stVerticalBlockBorderWrapper"] { margin-bottom: -10px; }
         </style>
     """, unsafe_allow_html=True)
     
@@ -116,11 +114,19 @@ def main():
             if not df.empty:
                 df['date'] = pd.to_datetime(df['date'])
                 df['Mês'] = df['date'].dt.strftime('%m/%Y')
-                mes_sel = st.selectbox("Selecione o Mês", sorted(df['Mês'].unique(), reverse=True))
+                
+                # --- SELETOR DE MÊS EM COLUNA ---
+                meses_disponiveis = sorted(df['Mês'].unique(), reverse=True)
+                mes_atual_str = datetime.now().strftime('%m/%Y')
+                
+                # Se o mês atual não tiver dados, ele usa o primeiro da lista
+                default_idx = meses_disponiveis.index(mes_atual_str) if mes_atual_str in meses_disponiveis else 0
+                
+                mes_sel = st.selectbox("Mês de Referência", meses_disponiveis, index=default_idx)
                 
                 f = df[df['Mês'] == mes_sel].copy().sort_values(by='date', ascending=False)
                 
-                # Resumo em Métricas (3 colunas)
+                # Métricas lado a lado
                 m1, m2, m3 = st.columns(3)
                 rec = f[f['type'] == 'Receita']['amount'].sum()
                 des = f[f['type'] == 'Despesa']['amount'].sum()
@@ -130,19 +136,14 @@ def main():
 
                 st.markdown("---")
                 
-                # LISTA EM CARDS (Layout Mobile-First)
                 for _, row in f.iterrows():
                     with st.container(border=True):
                         c_info, c_valor = st.columns([2, 1])
-                        
                         with c_info:
                             st.markdown(f"**{row['category']}**")
-                            # Formatação de detalhes
                             data_str = row['date'].strftime('%d/%m')
-                            if row['payment_method'] == "Cartão de Crédito":
-                                st.caption(f"📅 {data_str} • 💳 {int(row['installment_number'])}/{int(row['installment_total'])}")
-                            else:
-                                st.caption(f"📅 {data_str} • 💵 À vista")
+                            info_pag = f"💳 {int(row['installment_number'])}/{int(row['installment_total'])}" if row['payment_method'] == "Cartão de Crédito" else "💵 À vista"
+                            st.caption(f"📅 {data_str} • {info_pag}")
                         
                         with c_valor:
                             cor = "#2ECC71" if row['type'] == 'Receita' else "#E74C3C"
