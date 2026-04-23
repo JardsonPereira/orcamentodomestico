@@ -27,7 +27,7 @@ def main():
     # --- CONFIGURAÇÃO MOBILE-FRIENDLY ---
     st.set_page_config(page_title="ContabilApp Pro", layout="wide", page_icon="💰")
     
-    # CSS Customizado para Mobile e Estilização do Radio como Botões
+    # CSS Customizado
     st.markdown("""
         <style>
         @media (max-width: 640px) {
@@ -40,9 +40,6 @@ def main():
         .stButton>button { width: 100%; border-radius: 8px; height: 3.5em; font-weight: bold; }
         .main { background-color: #f8f9fa; }
         div[data-testid="stExpander"] { background: white; border-radius: 12px; }
-        
-        /* Ajuste para o seletor de meses horizontal */
-        div[data-testid="stMarkdownContainer"] > p { font-weight: bold; margin-bottom: -10px; }
         </style>
     """, unsafe_allow_html=True)
     
@@ -58,7 +55,6 @@ def main():
                 st.rerun()
             except: st.sidebar.error("Dados incorretos.")
     else:
-        # --- HEADER COMPACTO ---
         st.title("💰 ContabilApp")
         with st.expander(f"👤 {st.session_state.user_email}"):
             if st.button("Encerrar Sessão"):
@@ -73,7 +69,6 @@ def main():
         res_f = supabase.table("profile_transactions").select("*").eq("user_email", st.session_state.user_email).execute()
         df = pd.DataFrame(res_f.data)
 
-        # --- NAVEGAÇÃO POR ABAS ---
         tab_lanc, tab_extrato, tab_cartao, tab_gerenciar, tab_config = st.tabs([
             "➕ Lançar", "📊 Extrato", "💳 Cartão", "⚙️ Editar", "🛠️ Config"
         ])
@@ -81,7 +76,6 @@ def main():
         with tab_lanc:
             st.subheader("Nova Movimentação")
             metodo_sel = st.selectbox("Forma de Pagamento", ["Dinheiro/PIX", "Cartão de Crédito"], key="metodo_pag")
-            
             cart_vontade = None
             if metodo_sel == "Cartão de Crédito":
                 if lista_cartoes:
@@ -94,7 +88,6 @@ def main():
                 desc = st.text_input("Descrição")
                 valor_total = st.number_input("Valor (R$)", min_value=0.01, step=0.10)
                 data_origem = st.date_input("Data", datetime.now())
-                
                 total_parc = 1
                 if metodo_sel == "Cartão de Crédito":
                     total_parc = st.number_input("Parcelas", min_value=1, step=1)
@@ -117,24 +110,17 @@ def main():
             if not df.empty:
                 df['date'] = pd.to_datetime(df['date'])
                 df['Mês'] = df['date'].dt.strftime('%m/%Y')
-                
-                # Ordenar meses para a exibição (do mais antigo para o mais novo)
                 meses_disponiveis = sorted(df['Mês'].unique(), key=lambda x: datetime.strptime(x, '%m/%Y'))
                 mes_atual_str = datetime.now().strftime('%m/%Y')
-                
-                # Define o index padrão para o mês corrente
                 try:
                     default_idx = meses_disponiveis.index(mes_atual_str)
-                except ValueError:
+                except:
                     default_idx = len(meses_disponiveis) - 1
 
-                # EXIBIÇÃO EM FORMATO DE COLUNAS (RADIO HORIZONTAL)
                 st.write("Período:")
-                mes_sel = st.radio("Seletor de Meses", meses_disponiveis, index=default_idx, horizontal=True, label_visibility="collapsed")
+                mes_sel = st.radio("Meses", meses_disponiveis, index=default_idx, horizontal=True, label_visibility="collapsed")
                 
                 f = df[df['Mês'] == mes_sel].copy().sort_values(by='date', ascending=False)
-                
-                # Métricas
                 m1, m2, m3 = st.columns(3)
                 rec = f[f['type'] == 'Receita']['amount'].sum()
                 des = f[f['type'] == 'Despesa']['amount'].sum()
@@ -143,16 +129,14 @@ def main():
                 m3.metric("Saldo", f"R${rec-des:,.2f}")
 
                 st.markdown("---")
-                
                 for _, row in f.iterrows():
                     with st.container(border=True):
                         c_info, c_valor = st.columns([2, 1])
                         with c_info:
                             st.markdown(f"**{row['category']}**")
                             data_str = row['date'].strftime('%d/%m')
-                            info_pag = f"💳 {int(row['installment_number'])}/{int(row['installment_total'])}" if row['payment_method'] == "Cartão de Crédito" else "💵 À vista"
-                            st.caption(f"📅 {data_str} • {info_pag}")
-                        
+                            info_p = f"💳 {int(row['installment_number'])}/{int(row['installment_total'])}" if row['payment_method'] == "Cartão de Crédito" else "💵 À vista"
+                            st.caption(f"📅 {data_str} • {info_p}")
                         with c_valor:
                             cor = "#2ECC71" if row['type'] == 'Receita' else "#E74C3C"
                             simbolo = "+" if row['type'] == 'Receita' else "-"
@@ -161,24 +145,45 @@ def main():
                 st.info("Sem dados.")
 
         with tab_cartao:
-            if not df.empty:
+            if not df.empty and lista_cartoes:
                 df_c = df[df['payment_method'] == "Cartão de Crédito"].copy()
-                if not df_c.empty:
-                    df_c['date'] = pd.to_datetime(df_c['date'])
-                    hoje = datetime.now()
-                    resumo = []
-                    for (desc, card, total), grupo in df_c.groupby(['category', 'card_name', 'installment_total']):
-                        grupo = grupo.sort_values('date')
-                        proximas = grupo[grupo['date'] >= hoje.replace(day=1)]
-                        parc_at = proximas.iloc[0]['installment_number'] if not proximas.empty else total
-                        venc = proximas.iloc[0]['date'] if not proximas.empty else grupo.iloc[-1]['date']
-                        resumo.append({
-                            'Venc.': venc.strftime('%d/%m'),
-                            'Cartão': card, 'Item': desc,
-                            'Parc.': f"{int(parc_at)}/{int(total)}",
-                            'Total': f"R$ {grupo['amount'].sum():,.2f}"
-                        })
-                    st.dataframe(pd.DataFrame(resumo), use_container_width=True, hide_index=True)
+                df_c['date'] = pd.to_datetime(df_c['date'])
+                hoje = datetime.now()
+                
+                # Criar colunas dinamicamente com base no número de cartões
+                cols_cartao = st.columns(len(lista_cartoes))
+                
+                for idx, nome_cartao in enumerate(lista_cartoes):
+                    with cols_cartao[idx]:
+                        st.subheader(f"💳 {nome_cartao}")
+                        dados_este_cartao = df_c[df_c['card_name'] == nome_cartao]
+                        
+                        if not dados_este_cartao.empty:
+                            total_fatura = dados_este_cartao[dados_este_cartao['date'].dt.strftime('%m/%Y') == hoje.strftime('%m/%Y')]['amount'].sum()
+                            st.metric("Fatura Atual", f"R$ {total_fatura:,.2f}")
+                            
+                            resumo_cartao = []
+                            for (desc, total), grupo in dados_este_cartao.groupby(['category', 'installment_total']):
+                                grupo = grupo.sort_values('date')
+                                proximas = grupo[grupo['date'] >= hoje.replace(day=1)]
+                                if not proximas.empty:
+                                    parc_at = proximas.iloc[0]['installment_number']
+                                    venc = proximas.iloc[0]['date']
+                                    resumo_cartao.append({
+                                        'Venc.': venc.strftime('%d/%m'),
+                                        'Item': desc,
+                                        'Parc.': f"{int(parc_at)}/{int(total)}",
+                                        'Valor': f"R$ {proximas.iloc[0]['amount']:,.2f}"
+                                    })
+                            
+                            if resumo_cartao:
+                                st.dataframe(pd.DataFrame(resumo_cartao), use_container_width=True, hide_index=True)
+                            else:
+                                st.caption("Nenhuma parcela pendente.")
+                        else:
+                            st.info("Sem lançamentos.")
+            else:
+                st.info("Cadastre cartões e realize lançamentos para visualizar.")
 
         with tab_gerenciar:
             if not df.empty:
@@ -192,7 +197,6 @@ def main():
                     n_desc = st.text_input("Descrição", value=d_at['category'])
                     n_valor = st.number_input("Valor", value=float(d_at['amount']))
                     n_data = st.date_input("Data", pd.to_datetime(d_at['date']))
-                    
                     if st.form_submit_button("Salvar Alterações"):
                         supabase.table("profile_transactions").update({"category": n_desc, "amount": n_valor, "date": n_data.strftime("%Y-%m-%d")}).eq("id", id_alvo).execute()
                         st.rerun()
@@ -207,7 +211,6 @@ def main():
                 if n_c:
                     supabase.table("my_cards").insert({"user_email": st.session_state.user_email, "card_name": n_c}).execute()
                     st.rerun()
-            
             if lista_cartoes:
                 cart_del = st.selectbox("Remover Cartão", lista_cartoes)
                 if st.button("Excluir"):
