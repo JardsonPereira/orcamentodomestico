@@ -39,6 +39,9 @@ def main():
         .stButton>button { width: 100%; border-radius: 8px; height: 3.5em; font-weight: bold; }
         .main { background-color: #f8f9fa; }
         div[data-testid="stExpander"] { background: white; border-radius: 12px; }
+        
+        /* Ajuste para extrato ultra compacto */
+        .compact-box { margin-bottom: -15px; }
         </style>
     """, unsafe_allow_html=True)
     
@@ -113,31 +116,36 @@ def main():
                 try: default_idx = meses_disponiveis.index(mes_atual_str)
                 except: default_idx = len(meses_disponiveis) - 1
 
-                st.write("Período:")
                 mes_sel = st.radio("Meses", meses_disponiveis, index=default_idx, horizontal=True, label_visibility="collapsed")
                 
                 f = df[df['Mês'] == mes_sel].copy().sort_values(by='date', ascending=False)
+                
+                # Métricas compactas
                 m1, m2, m3 = st.columns(3)
                 rec = f[f['type'] == 'Receita']['amount'].sum()
                 des = f[f['type'] == 'Despesa']['amount'].sum()
-                m1.metric("Receitas", f"R${rec:,.2f}")
-                m2.metric("Despesas", f"R${des:,.2f}")
+                m1.metric("Rec.", f"R${rec:,.2f}")
+                m2.metric("Desp.", f"R${des:,.2f}")
                 m3.metric("Saldo", f"R${rec-des:,.2f}")
 
-                st.markdown("---")
+                st.markdown("<div style='margin-bottom: 10px;'></div>", unsafe_allow_html=True)
+                
+                # LISTA COMPACTA
                 for _, row in f.iterrows():
+                    cor = "#2ECC71" if row['type'] == 'Receita' else "#E74C3C"
+                    simbolo = "+" if row['type'] == 'Receita' else "-"
+                    
                     with st.container(border=True):
-                        c_info, c_valor = st.columns([2, 1])
-                        with c_info:
-                            st.markdown(f"**{row['category']}**")
-                            data_str = row['date'].strftime('%d/%m')
+                        # Layout em linha única para economizar espaço vertical
+                        c1, c2 = st.columns([3, 2])
+                        with c1:
+                            st.markdown(f"**{row['category'][:20]}**") # Limita texto se for muito longo
                             info_p = f"💳 {int(row['installment_number'])}/{int(row['installment_total'])}" if row['payment_method'] == "Cartão de Crédito" else "💵 À vista"
-                            st.caption(f"📅 {data_str} • {info_p}")
-                        with c_valor:
-                            cor = "#2ECC71" if row['type'] == 'Receita' else "#E74C3C"
-                            simbolo = "+" if row['type'] == 'Receita' else "-"
-                            st.markdown(f"<p style='text-align:right; color:{cor}; font-weight:bold; margin-top:5px;'> {simbolo} R$ {row['amount']:,.2f}</p>", unsafe_allow_html=True)
-            else: st.info("Sem dados.")
+                            st.markdown(f"<p style='font-size: 11px; color: gray; margin: -10px 0px 0px 0px;'>{row['date'].strftime('%d/%m')} • {info_p}</p>", unsafe_allow_html=True)
+                        with c2:
+                            st.markdown(f"<p style='text-align:right; color:{cor}; font-weight:bold; font-size: 14px; margin: 2px 0px;'>{simbolo}R${row['amount']:,.2f}</p>", unsafe_allow_html=True)
+            else:
+                st.info("Sem dados.")
 
         with tab_cartao:
             if not df.empty and lista_cartoes:
@@ -168,15 +176,9 @@ def main():
 
         with tab_gerenciar:
             if not df.empty:
-                # Agrupamos para mostrar apenas um registro por compra (mesma data original, descrição, cartão e total de parcelas)
                 df_edit = df.copy()
                 df_edit['date'] = pd.to_datetime(df_edit['date'])
-                
-                # Identificamos a data da primeira parcela para agrupar compras parceladas
-                # Criamos uma chave de agrupamento: data_inicial, categoria, cartao, total_parcelas
                 df_edit = df_edit.sort_values(['category', 'card_name', 'installment_total', 'date'])
-                
-                # Para cada grupo de parcelas, pegamos apenas o registro da parcela 1 (ou a menor disponível)
                 df_grouped = df_edit.groupby(['category', 'card_name', 'installment_total', 'payment_method'], as_index=False).first()
                 df_grouped = df_grouped.sort_values(by='date', ascending=False)
 
@@ -194,25 +196,21 @@ def main():
                     n_valor = st.number_input("Valor Total do Lançamento", value=valor_exibido)
                     n_data = st.date_input("Data Original", pd.to_datetime(d_at['date']))
                     
-                    st.info("⚠️ Alterações serão aplicadas a todas as parcelas deste lançamento.")
+                    st.info("⚠️ Alterações serão aplicadas a todas as parcelas.")
                     
                     if st.form_submit_button("Salvar Alterações em Tudo"):
-                        # Localizamos todas as parcelas relacionadas
                         relacionadas = df[(df['category'] == d_at['category']) & 
                                          (df['card_name'] == d_at['card_name']) & 
                                          (df['installment_total'] == d_at['installment_total'])]
-                        
                         v_parc_novo = n_valor / int(d_at['installment_total'])
-                        
                         for idx, row in relacionadas.iterrows():
-                            # Ajusta a data de cada parcela baseada na nova data inicial
                             nova_data_parc = add_months(n_data, int(row['installment_number']) - 1)
                             supabase.table("profile_transactions").update({
                                 "category": n_desc, 
                                 "amount": round(v_parc_novo, 2), 
                                 "date": nova_data_parc.strftime("%Y-%m-%d")
                             }).eq("id", row['id']).execute()
-                        st.success("Todas as parcelas atualizadas!")
+                        st.success("Atualizado!")
                         st.rerun()
                         
                     if st.form_submit_button("🗑️ Excluir Lançamento Completo"):
@@ -221,7 +219,7 @@ def main():
                                          (df['installment_total'] == d_at['installment_total'])]
                         for _, row in relacionadas.iterrows():
                             supabase.table("profile_transactions").delete().eq("id", row['id']).execute()
-                        st.warning("Lançamento e parcelas excluídos.")
+                        st.warning("Excluído.")
                         st.rerun()
 
         with tab_config:
