@@ -40,8 +40,24 @@ def main():
         .main { background-color: #f8f9fa; }
         div[data-testid="stExpander"] { background: white; border-radius: 12px; }
         
-        /* Ajuste para extrato ultra compacto */
-        .compact-box { margin-bottom: -15px; }
+        /* Estilo para lista de transações */
+        .transaction-item {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 10px 0;
+            border-bottom: 1px solid #f0f2f6;
+        }
+        .transaction-icon {
+            width: 40px;
+            height: 40px;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 20px;
+            margin-right: 12px;
+        }
         </style>
     """, unsafe_allow_html=True)
     
@@ -120,32 +136,42 @@ def main():
                 
                 f = df[df['Mês'] == mes_sel].copy().sort_values(by='date', ascending=False)
                 
-                # Métricas compactas
-                m1, m2, m3 = st.columns(3)
+                # Cabeçalho de Saldo
                 rec = f[f['type'] == 'Receita']['amount'].sum()
                 des = f[f['type'] == 'Despesa']['amount'].sum()
-                m1.metric("Rec.", f"R${rec:,.2f}")
-                m2.metric("Desp.", f"R${des:,.2f}")
-                m3.metric("Saldo", f"R${rec-des:,.2f}")
-
-                st.markdown("<div style='margin-bottom: 10px;'></div>", unsafe_allow_html=True)
                 
-                # LISTA COMPACTA
+                col1, col2, col3 = st.columns(3)
+                col1.metric("Ganhos", f"R${rec:,.2f}")
+                col2.metric("Gastos", f"R${des:,.2f}")
+                col3.metric("Líquido", f"R${rec-des:,.2f}")
+
+                st.markdown("---")
+                
+                # Lista de Transações Estilizada
                 for _, row in f.iterrows():
-                    cor = "#2ECC71" if row['type'] == 'Receita' else "#E74C3C"
-                    simbolo = "+" if row['type'] == 'Receita' else "-"
+                    is_receita = row['type'] == 'Receita'
+                    cor_valor = "#2ECC71" if is_receita else "#E74C3C"
+                    bg_icon = "#D4EFDF" if is_receita else "#FADBD8"
+                    emoji = "💰" if is_receita else "💸"
+                    prefixo = "+" if is_receita else "-"
                     
-                    with st.container(border=True):
-                        # Layout em linha única para economizar espaço vertical
-                        c1, c2 = st.columns([3, 2])
-                        with c1:
-                            st.markdown(f"**{row['category'][:20]}**") # Limita texto se for muito longo
-                            info_p = f"💳 {int(row['installment_number'])}/{int(row['installment_total'])}" if row['payment_method'] == "Cartão de Crédito" else "💵 À vista"
-                            st.markdown(f"<p style='font-size: 11px; color: gray; margin: -10px 0px 0px 0px;'>{row['date'].strftime('%d/%m')} • {info_p}</p>", unsafe_allow_html=True)
-                        with c2:
-                            st.markdown(f"<p style='text-align:right; color:{cor}; font-weight:bold; font-size: 14px; margin: 2px 0px;'>{simbolo}R${row['amount']:,.2f}</p>", unsafe_allow_html=True)
+                    st.markdown(f"""
+                        <div class="transaction-item">
+                            <div style="display: flex; align-items: center;">
+                                <div class="transaction-icon" style="background-color: {bg_icon};">{emoji}</div>
+                                <div>
+                                    <div style="font-weight: bold; font-size: 14px;">{row['category']}</div>
+                                    <div style="font-size: 11px; color: gray;">{row['date'].strftime('%d/%m')} • {row['payment_method']}</div>
+                                </div>
+                            </div>
+                            <div style="text-align: right;">
+                                <div style="font-weight: bold; color: {cor_valor}; font-size: 15px;">{prefixo} R${row['amount']:,.2f}</div>
+                                <div style="font-size: 10px; color: #BDC3C7;">{f"{int(row['installment_number'])}/{int(row['installment_total'])}" if row['payment_method'] == "Cartão de Crédito" else ""}</div>
+                            </div>
+                        </div>
+                    """, unsafe_allow_html=True)
             else:
-                st.info("Sem dados.")
+                st.info("Nenhuma movimentação neste período.")
 
         with tab_cartao:
             if not df.empty and lista_cartoes:
