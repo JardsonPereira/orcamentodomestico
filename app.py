@@ -13,7 +13,7 @@ except:
     st.error("Erro nas credenciais. Verifique os Secrets.")
     st.stop()
 
-# --- INICIALIZAÇÃO DO STATE (Prevenção de Erros) ---
+# --- INICIALIZAÇÃO DO STATE ---
 if "logado" not in st.session_state:
     st.session_state.logado = False
 if "user_name" not in st.session_state:
@@ -72,41 +72,52 @@ def main():
                     st.subheader("Login")
                     email = st.text_input("E-mail", placeholder="seu@email.com")
                     senha = st.text_input("Senha", type='password')
-                    nome_login = st.text_input("Nome de Exibição (Opcional)", placeholder="Como quer ser chamado?")
+                    nome_login = st.text_input("Seu Nome", placeholder="Como quer ser chamado?")
                     
                     if st.button("ACESSAR SISTEMA"):
                         try:
+                            # Tenta fazer login
                             response = supabase.auth.sign_in_with_password({"email": email, "password": senha})
                             if response.user:
                                 st.session_state.logado = True
                                 st.session_state.user_email = email
                                 st.session_state.user_name = nome_login if nome_login else "Usuário"
                                 st.rerun()
-                        except:
-                            st.error("E-mail ou senha incorretos.")
+                        except Exception as e:
+                            st.error("E-mail ou senha incorretos ou conta não confirmada.")
                             
                 else:
                     st.subheader("Cadastro")
-                    novo_nome = st.text_input("Seu Nome", placeholder="Ex: Maria")
-                    novo_email = st.text_input("E-mail", placeholder="exemplo@email.com")
+                    novo_nome = st.text_input("Seu Nome", placeholder="Ex: Jardson")
+                    novo_email = st.text_input("E-mail", placeholder="seu@email.com")
                     nova_senha = st.text_input("Crie uma senha", type='password', placeholder="mínimo 6 caracteres")
                     
                     if st.button("CRIAR MINHA CONTA"):
-                        try:
-                            supabase.auth.sign_up({"email": novo_email, "password": nova_senha})
-                            st.session_state.logado = True
-                            st.session_state.user_email = novo_email
-                            st.session_state.user_name = novo_nome
-                            st.success("Conta criada com sucesso!")
-                            st.rerun()
-                        except Exception as e:
-                            st.error(f"Erro ao cadastrar. Tente outro e-mail.")
+                        if not novo_nome or not novo_email or len(nova_senha) < 6:
+                            st.warning("Preencha todos os campos corretamente.")
+                        else:
+                            try:
+                                # Cadastra o usuário
+                                res = supabase.auth.sign_up({"email": novo_email, "password": nova_senha})
+                                
+                                # No Supabase, se o e-mail for criado, ele retorna um objeto mesmo com 'confirm email' ativo
+                                if res.user:
+                                    st.session_state.logado = True
+                                    st.session_state.user_email = novo_email
+                                    st.session_state.user_name = novo_nome
+                                    st.success("Conta criada! Acessando...")
+                                    st.rerun()
+                            except Exception as e:
+                                # Se der erro aqui, é provável que o e-mail já exista no banco
+                                st.error("Erro ao cadastrar. Verifique se o e-mail já existe ou tente outro.")
 
     else:
         # --- SISTEMA LOGADO ---
         col_title, col_user = st.columns([3, 1])
         with col_title:
-            st.title(f"💰 Olá, {st.session_state.get('user_name', 'Usuário')}")
+            # Usar .get com fallback para evitar o erro de AttributeError se a chave sumir
+            nome_display = st.session_state.get('user_name', 'Usuário')
+            st.title(f"💰 Olá, {nome_display}")
         with col_user:
             with st.expander(f"👤 Perfil"):
                 st.write(f"ID: {st.session_state.user_email}")
@@ -144,11 +155,12 @@ def main():
                     total_p = st.number_input("Parcelas", min_value=1, step=1)
 
                 if st.form_submit_button("💾 SALVAR"):
+                    u_email = st.session_state.user_email
                     v_parc = valor_t / int(total_p)
                     for i in range(int(total_p)):
                         d_venc = add_months(data_o, i)
                         supabase.table("profile_transactions").insert({
-                            "user_email": st.session_state.user_email, "type": tipo, "category": desc,
+                            "user_email": u_email, "type": tipo, "category": desc,
                             "amount": round(v_parc, 2), "date": d_venc.strftime("%Y-%m-%d"),
                             "payment_method": metodo_sel, "card_name": cart_v,
                             "installment_total": int(total_p), "installment_number": i + 1
@@ -247,6 +259,7 @@ def main():
                         for idx, row in rel.iterrows():
                             nova_d = add_months(n_data_b, int(row['installment_number']) - 1)
                             supabase.table("profile_transactions").update({"category": n_desc, "amount": round(v_np, 2), "date": nova_d.strftime("%Y-%m-%d")}).eq("id", row['id']).execute()
+                        st.success("Atualizado!")
                         st.rerun()
                     if st.form_submit_button("🗑️ EXCLUIR TUDO"):
                         rel = df[(df['category'] == d_at['category']) & (df['installment_total'] == d_at['installment_total']) & (df['type'] == d_at['type'])]
