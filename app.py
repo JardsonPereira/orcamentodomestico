@@ -80,10 +80,7 @@ def main():
                     
                     if st.button("CRIAR MINHA CONTA"):
                         try:
-                            # Tenta cadastrar o usuário
                             res = supabase.auth.sign_up({"email": novo_email, "password": nova_senha})
-                            
-                            # Se o e-mail confirm estiver desativado no Supabase, logamos direto
                             st.session_state.logado = True
                             st.session_state.user_email = novo_email
                             st.session_state.user_name = novo_nome
@@ -189,10 +186,21 @@ def main():
                 
                 with col_des:
                     st.markdown("### 🔴 Saídas")
-                    df_des = f[f['type'] == 'Despesa'][['date', 'category', 'amount']].copy()
+                    df_des = f[f['type'] == 'Despesa'].copy()
                     if not df_des.empty:
-                        df_des['date'] = df_des['date'].dt.strftime('%d/%m')
-                        st.dataframe(df_des, use_container_width=True, hide_index=True)
+                        # Lógica para mostrar parcelas e quanto falta
+                        def format_installment(row):
+                            if row['payment_method'] == "Cartão de Crédito":
+                                atual = int(row['installment_number'])
+                                total = int(row['installment_total'])
+                                falta = total - atual
+                                return f"{atual}/{total} (Restam {falta})"
+                            return "À vista"
+
+                        df_des['Info Parcelas'] = df_des.apply(format_installment, axis=1)
+                        df_des_view = df_des[['date', 'category', 'amount', 'Info Parcelas']]
+                        df_des_view['date'] = df_des_view['date'].dt.strftime('%d/%m')
+                        st.dataframe(df_des_view, use_container_width=True, hide_index=True)
             else: st.info("Nenhum dado encontrado.")
 
         with tab_cartao:
