@@ -30,19 +30,12 @@ def main():
     # CSS AVANÇADO PARA UI/UX
     st.markdown("""
         <style>
-        /* Importando fonte moderna */
         @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap');
         
         html, body, [class*="st-"] {
             font-family: 'Inter', sans-serif;
         }
-
-        /* Fundo do App */
-        .stApp {
-            background-color: #F0F2F5;
-        }
-
-        /* Estilização das Métricas */
+        .stApp { background-color: #F0F2F5; }
         [data-testid="stMetric"] {
             background-color: white;
             padding: 15px !important;
@@ -50,8 +43,6 @@ def main():
             box-shadow: 0 2px 4px rgba(0,0,0,0.05);
             border: 1px solid #E0E0E0;
         }
-
-        /* Botões */
         .stButton>button {
             width: 100%;
             border-radius: 10px;
@@ -66,12 +57,7 @@ def main():
             background-color: #1A54C5;
             box-shadow: 0 4px 12px rgba(46, 111, 242, 0.3);
         }
-
-        /* Tabs (Abas) */
-        .stTabs [data-baseweb="tab-list"] {
-            gap: 10px;
-            background-color: transparent;
-        }
+        .stTabs [data-baseweb="tab-list"] { gap: 10px; background-color: transparent; }
         .stTabs [data-baseweb="tab"] {
             height: 45px;
             background-color: white;
@@ -79,25 +65,13 @@ def main():
             padding: 0 20px;
             border: 1px solid #E0E0E0;
         }
-        .stTabs [data-baseweb="tab-highlight"] {
-            background-color: #2E6FF2;
-        }
-
-        /* Containers e Cards */
         [data-testid="stExpander"], div[data-testid="stForm"] {
             background-color: white !important;
             border-radius: 15px !important;
             border: 1px solid #E0E0E0 !important;
             padding: 10px;
         }
-
-        /* Títulos */
-        h1, h2, h3 {
-            color: #1A1A1A;
-            font-weight: 700 !important;
-        }
-
-        /* Estilo para Radio Horizontal (Meses) */
+        h1, h2, h3 { color: #1A1A1A; font-weight: 700 !important; }
         div[data-testid="stHorizontalBlock"] {
             background: white;
             padding: 10px;
@@ -109,23 +83,31 @@ def main():
     
     if not st.session_state.logado:
         st.sidebar.title("🔐 Acesso")
+        # NOVO CAMPO: Nome de Exibição
+        nome_usuario = st.sidebar.text_input("Seu Nome (como deseja ser chamado)")
         email = st.sidebar.text_input("E-mail")
         senha = st.sidebar.text_input("Senha", type='password')
+        
         if st.sidebar.button("Entrar"):
-            try:
-                supabase.auth.sign_in_with_password({"email": email, "password": senha})
-                st.session_state.logado = True
-                st.session_state.user_email = email
-                st.rerun()
-            except: st.sidebar.error("Dados incorretos.")
+            if not nome_usuario:
+                st.sidebar.warning("Por favor, insira um nome para exibição.")
+            else:
+                try:
+                    supabase.auth.sign_in_with_password({"email": email, "password": senha})
+                    st.session_state.logado = True
+                    st.session_state.user_email = email
+                    st.session_state.user_name = nome_usuario # Salva o nome na sessão
+                    st.rerun()
+                except: 
+                    st.sidebar.error("Dados incorretos.")
     else:
-        # HEADER
+        # HEADER USANDO O NOME DE EXIBIÇÃO
         col_title, col_user = st.columns([3, 1])
         with col_title:
-            st.title("💰 Minhas Finanças")
+            st.title(f"💰 Olá, {st.session_state.user_name}")
         with col_user:
             with st.expander(f"👤 Perfil"):
-                st.write(st.session_state.user_email)
+                st.write(f"Conectado como: {st.session_state.user_email}")
                 if st.button("Sair"):
                     st.session_state.logado = False
                     st.rerun()
