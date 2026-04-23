@@ -29,7 +29,6 @@ def add_months(sourcedate, months):
     return datetime(year, month, day)
 
 def main():
-    # --- CONFIGURAÇÃO VISUAL MOBILE-FIRST ---
     st.set_page_config(page_title="ContabilApp Pro", layout="wide", page_icon="💰")
     
     st.markdown("""
@@ -37,19 +36,7 @@ def main():
         @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap');
         html, body, [class*="st-"] { font-family: 'Inter', sans-serif; }
         .stApp { background-color: #F0F2F5; }
-        
-        @media (max-width: 640px) {
-            .stMetric { padding: 10px !important; }
-            .stMetric div { font-size: 0.8rem !important; }
-            .stTabs [data-baseweb="tab-list"] { gap: 8px; }
-            .stTabs [data-baseweb="tab"] { padding: 8px 4px; font-size: 12px; }
-        }
-        
-        .stButton>button {
-            width: 100%; border-radius: 10px; height: 3.2em;
-            font-weight: 600; transition: all 0.2s;
-        }
-        
+        .stButton>button { width: 100%; border-radius: 10px; height: 3.2em; font-weight: 600; }
         [data-testid="stExpander"], div[data-testid="stForm"], .stContainer { 
             background: white; border-radius: 12px; border: 1px solid #eee; padding: 15px; margin-bottom: 10px;
         }
@@ -58,7 +45,6 @@ def main():
     
     if not st.session_state.logado:
         st.markdown("<h1 style='text-align: center;'>💰 ContabilApp Pro</h1>", unsafe_allow_html=True)
-        
         _, col_central, _ = st.columns([1, 2, 1])
         
         with col_central:
@@ -67,19 +53,25 @@ def main():
             with st.container():
                 if escolha == "Entrar na Conta":
                     st.subheader("Login")
-                    email = st.text_input("E-mail", placeholder="seu@email.com").strip()
-                    senha = st.text_input("Senha", type='password')
+                    # .strip() remove espaços acidentais no e-mail
+                    email_login = st.text_input("E-mail", placeholder="seu@email.com").strip()
+                    senha_login = st.text_input("Senha", type='password')
                     
                     if st.button("ACESSAR SISTEMA"):
                         try:
-                            response = supabase.auth.sign_in_with_password({"email": email, "password": senha})
+                            # Tentativa de login direto
+                            response = supabase.auth.sign_in_with_password({"email": email_login, "password": senha_login})
                             if response.user:
                                 st.session_state.logado = True
-                                st.session_state.user_email = email
-                                # O nome de exibição pode ser buscado de um perfil no banco futuramente, por ora mantemos o state
+                                st.session_state.user_email = email_login
                                 st.rerun()
-                        except:
-                            st.error("Erro no login. Verifique e-mail e senha.")
+                        except Exception as e:
+                            # Se der erro, verificamos se é falta de confirmação
+                            erro = str(e).lower()
+                            if "confirm" in erro:
+                                st.error("E-mail pendente de confirmação. Verifique sua caixa de entrada/spam.")
+                            else:
+                                st.error("E-mail ou senha incorretos.")
                             
                 elif escolha == "Criar Nova Conta":
                     st.subheader("Cadastro")
@@ -94,35 +86,28 @@ def main():
                             try:
                                 res = supabase.auth.sign_up({"email": novo_email, "password": nova_senha})
                                 if res.user:
-                                    st.session_state.user_name = novo_nome # Armazena o nome para o próximo login
-                                    st.success("Conta criada com sucesso! Agora, mude para a aba 'Entrar na Conta' para acessar.")
+                                    st.session_state.user_name = novo_nome
+                                    st.success("Conta criada! Agora faça o login na aba ao lado.")
                             except Exception as e:
                                 st.error(f"Erro ao cadastrar: {str(e)}")
 
                 else:
-                    st.subheader("Recuperação de Senha")
-                    st.info("Certifique-se de que a URL do seu app está cadastrada no Dashboard do Supabase (Auth > URL Configuration).")
-                    email_rec = st.text_input("Digite seu e-mail cadastrado", placeholder="seu@email.com").strip()
-                    
-                    if st.button("ENVIAR E-MAIL DE RECUPERAÇÃO"):
-                        if not email_rec:
-                            st.warning("Por favor, digite o seu e-mail.")
-                        else:
-                            try:
-                                supabase.auth.reset_password_for_email(email_rec)
-                                st.success(f"Link enviado para {email_rec}! Verifique seu e-mail.")
-                            except Exception as e:
-                                st.error(f"Não foi possível enviar: {str(e)}")
+                    st.subheader("Recuperação")
+                    email_rec = st.text_input("Digite seu e-mail", placeholder="seu@email.com").strip()
+                    if st.button("ENVIAR LINK"):
+                        try:
+                            supabase.auth.reset_password_for_email(email_rec)
+                            st.success("Link enviado! Verifique seu e-mail.")
+                        except Exception as e:
+                            st.error(f"Erro: {str(e)}")
 
     else:
         # --- SISTEMA LOGADO ---
         col_title, col_user = st.columns([3, 1])
         with col_title:
-            nome_display = st.session_state.get('user_name', 'Usuário')
-            st.title(f"💰 Olá, {nome_display}")
+            st.title(f"💰 Olá, {st.session_state.get('user_name', 'Usuário')}")
         with col_user:
             with st.expander(f"👤 Perfil"):
-                st.write(f"Conectado como: {st.session_state.user_email}")
                 if st.button("Encerrar Sessão"):
                     st.session_state.logado = False
                     st.rerun()
@@ -135,9 +120,7 @@ def main():
         res_f = supabase.table("profile_transactions").select("*").eq("user_email", st.session_state.user_email).execute()
         df = pd.DataFrame(res_f.data)
 
-        tab_lanc, tab_extrato, tab_cartao, tab_gerenciar, tab_config = st.tabs([
-            "➕ Lançar", "📊 Extrato", "💳 Cartões", "⚙️ Editar", "🛠️ Ajustes"
-        ])
+        tab_lanc, tab_extrato, tab_cartao, tab_gerenciar, tab_config = st.tabs(["➕ Lançar", "📊 Extrato", "💳 Cartões", "⚙️ Editar", "🛠️ Ajustes"])
 
         with tab_lanc:
             st.subheader("Nova Movimentação")
@@ -176,16 +159,13 @@ def main():
                 df['Mês'] = df['date'].dt.strftime('%m/%Y')
                 meses = sorted(df['Mês'].unique(), key=lambda x: datetime.strptime(x, '%m/%Y'))
                 mes_sel = st.radio("Meses", meses, index=len(meses)-1, horizontal=True, label_visibility="collapsed")
-                
                 f = df[df['Mês'] == mes_sel].copy().sort_values(by='date', ascending=False)
                 rec = f[f['type'] == 'Receita']['amount'].sum()
                 des = f[f['type'] == 'Despesa']['amount'].sum()
-                
                 m1, m2, m3 = st.columns(3)
                 m1.metric("Receitas", f"R$ {rec:,.2f}")
                 m2.metric("Despesas", f"R$ {des:,.2f}")
                 m3.metric("Saldo", f"R$ {rec-des:,.2f}")
-
                 st.markdown("---")
                 col_r, col_d = st.columns(2)
                 with col_r:
@@ -238,23 +218,14 @@ def main():
                 df_edit['card_name'] = df_edit['card_name'].fillna('N/A')
                 df_grouped = df_edit.sort_values(['category', 'card_name', 'installment_total', 'date'])
                 df_grouped = df_grouped.groupby(['category', 'card_name', 'installment_total', 'payment_method', 'type'], as_index=False, dropna=False).first()
-                
-                opcoes = {}
-                for _, r in df_grouped.iterrows():
-                    v_total = float(r['amount']) * int(r['installment_total'])
-                    prefixo = "💰" if r['type'] == 'Receita' else "💸"
-                    label = f"{prefixo} {r['date'].strftime('%d/%m/%y')} | {r['category']} - R$ {v_total:,.2f}"
-                    opcoes[label] = r['id']
-                
+                opcoes = {f"{r['date'].strftime('%d/%m/%y')} | {r['category']} - R$ {float(r['amount'])*int(r['installment_total']):,.2f}": r['id'] for _, r in df_grouped.iterrows()}
                 item_sel = st.selectbox("Selecione para editar", list(opcoes.keys()))
                 id_alvo = opcoes[item_sel]
                 d_at = df[df['id'] == id_alvo].iloc[0]
-
                 with st.form("edit_form"):
                     n_desc = st.text_input("Descrição", value=d_at['category'])
                     n_val_f = st.number_input("Valor Total (R$)", value=float(d_at['amount']) * int(d_at['installment_total']))
                     n_data_b = st.date_input("Data Original", pd.to_datetime(d_at['date']))
-                    
                     if st.form_submit_button("💾 ATUALIZAR TUDO"):
                         rel = df[(df['category'] == d_at['category']) & (df['installment_total'] == d_at['installment_total']) & (df['type'] == d_at['type'])]
                         v_np = n_val_f / int(d_at['installment_total'])
