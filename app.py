@@ -173,41 +173,67 @@ def main():
 
         with tab_gerenciar:
             if not df.empty:
-                # --- FILTRO EXCLUSIVO PARA DINHEIRO/PIX ---
-                df_view = df.copy()
-                df_view['date'] = pd.to_datetime(df_view['date'])
-                df_view = df_view[df_view['payment_method'] == "Dinheiro/PIX"].sort_values(by='date', ascending=False)
+                df_edit = df.copy()
+                df_edit['date'] = pd.to_datetime(df_edit['date'])
                 
-                if not df_view.empty:
-                    opcoes = {}
-                    for _, r in df_view.iterrows():
-                        label = f"{r['date'].strftime('%d/%m/%y')} | {r['category']} - R${float(r['amount']):.2f}"
-                        opcoes[label] = r['id']
-                    
-                    item_sel = st.selectbox("Selecione o lançamento (Dinheiro/PIX)", list(opcoes.keys()))
-                    id_alvo = opcoes[item_sel]
-                    d_at = df[df['id'] == id_alvo].iloc[0]
+                # AGRUPAMENTO PARA MOSTRAR VALOR TOTAL (Mantendo apenas o primeiro registro de cada grupo)
+                # Ordenamos para garantir que a parcela 1 seja a referência da data
+                df_edit = df_edit.sort_values(['category', 'card_name', 'installment_total', 'date'])
+                df_grouped = df_edit.groupby(['category', 'card_name', 'installment_total', 'payment_method'], as_index=False).first()
+                df_grouped = df_grouped.sort_values(by='date', ascending=False)
+                
+                opcoes = {}
+                for _, r in df_grouped.iterrows():
+                    # Cálculo do valor total para o rótulo
+                    v_total = float(r['amount']) * int(r['installment_total'])
+                    prefixo = "💳" if r['payment_method'] == "Cartão de Crédito" else "💵"
+                    parc_txt = f" [{int(r['installment_total'])}x]" if r['payment_method'] == "Cartão de Crédito" else ""
+                    label = f"{prefixo} {r['date'].strftime('%d/%m/%y')} | {r['category']}{parc_txt} - R${v_total:,.2f}"
+                    opcoes[label] = r['id']
+                
+                item_sel = st.selectbox("Selecione a compra para gerenciar", list(opcoes.keys()))
+                id_alvo = opcoes[item_sel]
+                d_at = df[df['id'] == id_alvo].iloc[0]
 
-                    with st.form("edit_mobile_pix"):
-                        n_desc = st.text_input("Descrição", value=d_at['category'])
-                        n_valor = st.number_input("Valor", value=float(d_at['amount']))
-                        n_data = st.date_input("Data", pd.to_datetime(d_at['date']))
+                # Valor total para o campo de entrada
+                valor_total_compra = float(d_at['amount']) * int(d_at['installment_total'])
+
+                with st.form("edit_compra_total"):
+                    st.write(f"Modo: **{d_at['payment_method']}**")
+                    n_desc = st.text_input("Descrição", value=d_at['category'])
+                    n_valor_full = st.number_input("Valor TOTAL da Compra", value=valor_total_compra)
+                    n_data_base = st.date_input("Data da Compra (1ª Parcela)", pd.to_datetime(d_at['date']))
+                    
+                    if d_at['payment_method'] == "Cartão de Crédito":
+                        st.caption(f"Parcelamento detectado: {int(d_at['installment_total'])}x")
+
+                    if st.form_submit_button("💾 Salvar Alterações em Todas as Parcelas"):
+                        # Busca todas as parcelas desse grupo específico
+                        relacionadas = df[(df['category'] == d_at['category']) & 
+                                         (df['card_name'] == d_at['card_name']) & 
+                                         (df['installment_total'] == d_at['installment_total'])]
                         
-                        if st.form_submit_button("Salvar Alterações"):
+                        v_nova_parc = n_valor_full / int(d_at['installment_total'])
+                        
+                        for idx, row in relacionadas.iterrows():
+                            # Reposiciona as datas com base na nova data da 1ª parcela
+                            nova_data = add_months(n_data_base, int(row['installment_number']) - 1)
                             supabase.table("profile_transactions").update({
                                 "category": n_desc, 
-                                "amount": round(n_valor, 2), 
-                                "date": n_data.strftime("%Y-%m-%d")
-                            }).eq("id", id_alvo).execute()
-                            st.success("Atualizado!")
-                            st.rerun()
-                            
-                        if st.form_submit_button("🗑️ Excluir Registro"):
-                            supabase.table("profile_transactions").delete().eq("id", id_alvo).execute()
-                            st.warning("Excluído.")
-                            st.rerun()
-                else:
-                    st.info("Nenhum lançamento em Dinheiro/PIX encontrado.")
+                                "amount": round(v_nova_parc, 2), 
+                                "date": nova_data.strftime("%Y-%m-%d")
+                            }).eq("id", row['id']).execute()
+                        st.success("Compra e parcelas atualizadas!")
+                        st.rerun()
+                        
+                    if st.form_submit_button("🗑️ Excluir Compra Completa"):
+                        relacionadas = df[(df['category'] == d_at['category']) & 
+                                         (df['card_name'] == d_at['card_name']) & 
+                                         (df['installment_total'] == d_at['installment_total'])]
+                        for _, row in relacionadas.iterrows():
+                            supabase.table("profile_transactions").delete().eq("id", row['id']).execute()
+                        st.warning("Toda a movimentação foi excluída.")
+                        st.rerun()
 
         with tab_config:
             st.write("**Gerenciar Cartões**")
