@@ -67,7 +67,7 @@ def main():
             with st.container():
                 if escolha == "Entrar na Conta":
                     st.subheader("Login")
-                    email = st.text_input("E-mail", placeholder="seu@email.com")
+                    email = st.text_input("E-mail", placeholder="seu@email.com").strip()
                     senha = st.text_input("Senha", type='password')
                     
                     if st.button("ACESSAR SISTEMA"):
@@ -76,15 +76,15 @@ def main():
                             if response.user:
                                 st.session_state.logado = True
                                 st.session_state.user_email = email
-                                # O nome será buscado ou ficará como Usuário por padrão no login
+                                # O nome de exibição pode ser buscado de um perfil no banco futuramente, por ora mantemos o state
                                 st.rerun()
                         except:
-                            st.error("Erro no login. Verifique se o e-mail/senha estão corretos.")
+                            st.error("Erro no login. Verifique e-mail e senha.")
                             
                 elif escolha == "Criar Nova Conta":
                     st.subheader("Cadastro")
                     novo_nome = st.text_input("Seu Nome", placeholder="Ex: Jardson")
-                    novo_email = st.text_input("E-mail", placeholder="seu@email.com")
+                    novo_email = st.text_input("E-mail", placeholder="seu@email.com").strip()
                     nova_senha = st.text_input("Crie uma senha", type='password', placeholder="mínimo 6 caracteres")
                     
                     if st.button("CRIAR MINHA CONTA"):
@@ -94,23 +94,25 @@ def main():
                             try:
                                 res = supabase.auth.sign_up({"email": novo_email, "password": nova_senha})
                                 if res.user:
-                                    st.session_state.logado = True
-                                    st.session_state.user_email = novo_email
-                                    st.session_state.user_name = novo_nome
-                                    st.success("Conta criada! Acessando...")
-                                    st.rerun()
+                                    st.session_state.user_name = novo_nome # Armazena o nome para o próximo login
+                                    st.success("Conta criada com sucesso! Agora, mude para a aba 'Entrar na Conta' para acessar.")
                             except Exception as e:
                                 st.error(f"Erro ao cadastrar: {str(e)}")
 
                 else:
                     st.subheader("Recuperação de Senha")
-                    email_rec = st.text_input("Digite seu e-mail cadastrado", placeholder="seu@email.com")
+                    st.info("Certifique-se de que a URL do seu app está cadastrada no Dashboard do Supabase (Auth > URL Configuration).")
+                    email_rec = st.text_input("Digite seu e-mail cadastrado", placeholder="seu@email.com").strip()
+                    
                     if st.button("ENVIAR E-MAIL DE RECUPERAÇÃO"):
-                        try:
-                            supabase.auth.reset_password_for_email(email_rec)
-                            st.success("E-mail enviado! Verifique sua caixa de entrada para redefinir a senha.")
-                        except Exception as e:
-                            st.error(f"Erro ao enviar: {str(e)}")
+                        if not email_rec:
+                            st.warning("Por favor, digite o seu e-mail.")
+                        else:
+                            try:
+                                supabase.auth.reset_password_for_email(email_rec)
+                                st.success(f"Link enviado para {email_rec}! Verifique seu e-mail.")
+                            except Exception as e:
+                                st.error(f"Não foi possível enviar: {str(e)}")
 
     else:
         # --- SISTEMA LOGADO ---
