@@ -13,8 +13,11 @@ except:
     st.error("Erro nas credenciais. Verifique os Secrets.")
     st.stop()
 
+# --- INICIALIZAÇÃO DO STATE ---
 if "logado" not in st.session_state:
     st.session_state.logado = False
+if "user_name" not in st.session_state:
+    st.session_state.user_name = ""
 
 def add_months(sourcedate, months):
     month = sourcedate.month - 1 + months
@@ -83,7 +86,6 @@ def main():
     
     if not st.session_state.logado:
         st.sidebar.title("🔐 Acesso")
-        # NOVO CAMPO: Nome de Exibição
         nome_usuario = st.sidebar.text_input("Seu Nome (como deseja ser chamado)")
         email = st.sidebar.text_input("E-mail")
         senha = st.sidebar.text_input("Senha", type='password')
@@ -96,20 +98,21 @@ def main():
                     supabase.auth.sign_in_with_password({"email": email, "password": senha})
                     st.session_state.logado = True
                     st.session_state.user_email = email
-                    st.session_state.user_name = nome_usuario # Salva o nome na sessão
+                    st.session_state.user_name = nome_usuario
                     st.rerun()
                 except: 
                     st.sidebar.error("Dados incorretos.")
     else:
-        # HEADER USANDO O NOME DE EXIBIÇÃO
+        # HEADER COM NOME DE EXIBIÇÃO
         col_title, col_user = st.columns([3, 1])
         with col_title:
-            st.title(f"💰 Olá, {st.session_state.user_name}")
+            st.title(f"💰 Olá, {st.session_state.get('user_name', 'Usuário')}")
         with col_user:
             with st.expander(f"👤 Perfil"):
                 st.write(f"Conectado como: {st.session_state.user_email}")
                 if st.button("Sair"):
                     st.session_state.logado = False
+                    st.session_state.user_name = ""
                     st.rerun()
 
         # DADOS
