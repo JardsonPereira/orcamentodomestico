@@ -150,23 +150,15 @@ def main():
                 df_c['date'] = pd.to_datetime(df_c['date'])
                 hoje = datetime.now()
                 
-                # Ajuste Proporcional: No Desktop colunas lado a lado, no Mobile os containers se adaptam
-                # Usamos um loop com containers para manter a proporção visual limpa
                 for nome_cartao in lista_cartoes:
                     with st.container(border=True):
                         st.markdown(f"### 💳 {nome_cartao}")
-                        
                         dados_este_cartao = df_c[df_c['card_name'] == nome_cartao]
-                        
                         if not dados_este_cartao.empty:
-                            # Filtra apenas o que vence no mês atual para a métrica principal
                             total_fatura = dados_este_cartao[dados_este_cartao['date'].dt.strftime('%m/%Y') == hoje.strftime('%m/%Y')]['amount'].sum()
-                            
                             c1, c2 = st.columns([1, 2])
                             c1.metric("Fatura do Mês", f"R$ {total_fatura:,.2f}")
-                            
                             resumo_cartao = []
-                            # Pega as próximas parcelas (incluindo as de hoje em diante)
                             for (desc, total), grupo in dados_este_cartao.groupby(['category', 'installment_total']):
                                 grupo = grupo.sort_values('date')
                                 proximas = grupo[grupo['date'] >= hoje.replace(day=1)]
@@ -179,7 +171,6 @@ def main():
                                         'Parc.': f"{int(parc_at)}/{int(total)}",
                                         'Valor': f"R$ {proximas.iloc[0]['amount']:,.2f}"
                                     })
-                            
                             if resumo_cartao:
                                 with c2:
                                     st.dataframe(pd.DataFrame(resumo_cartao), use_container_width=True, hide_index=True)
@@ -198,13 +189,29 @@ def main():
                 id_alvo = opcoes[item_sel]
                 d_at = df[df['id'] == id_alvo].iloc[0]
 
+                # --- CÁLCULO DO VALOR TOTAL PARA CARTÃO ---
+                valor_exibido = float(d_at['amount'])
+                if d_at['payment_method'] == "Cartão de Crédito":
+                    valor_exibido = float(d_at['amount']) * int(d_at['installment_total'])
+
                 with st.form("edit_mobile"):
                     n_desc = st.text_input("Descrição", value=d_at['category'])
-                    n_valor = st.number_input("Valor", value=float(d_at['amount']))
+                    n_valor = st.number_input("Valor Total do Lançamento", value=valor_exibido)
                     n_data = st.date_input("Data", pd.to_datetime(d_at['date']))
+                    
                     if st.form_submit_button("Salvar Alterações"):
-                        supabase.table("profile_transactions").update({"category": n_desc, "amount": n_valor, "date": n_data.strftime("%Y-%m-%d")}).eq("id", id_alvo).execute()
+                        # Se for cartão, salva a parcela proporcional novamente
+                        valor_final = n_valor
+                        if d_at['payment_method'] == "Cartão de Crédito":
+                             valor_final = n_valor / int(d_at['installment_total'])
+                        
+                        supabase.table("profile_transactions").update({
+                            "category": n_desc, 
+                            "amount": round(valor_final, 2), 
+                            "date": n_data.strftime("%Y-%m-%d")
+                        }).eq("id", id_alvo).execute()
                         st.rerun()
+                        
                     if st.form_submit_button("🗑️ Excluir Registro"):
                         supabase.table("profile_transactions").delete().eq("id", id_alvo).execute()
                         st.rerun()
