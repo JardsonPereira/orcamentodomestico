@@ -151,31 +151,24 @@ else:
                     st.info("Sem parcelas para este mês.")
 
         with tab2:
-            st.subheader("📋 Gerenciar Compras Totais")
-            st.info("Ao excluir uma compra aqui, todas as parcelas futuras e passadas dela serão removidas.")
+            st.subheader("📋 Resumo Total de Compras")
             if not df_all.empty:
-                # Agrupamos para mostrar a compra total
+                # Agrupamento para mostrar apenas o valor total da compra original
                 resumo = df_all.groupby(['descricao', 'cartao_nome', 'total_parcelas']).agg({'valor': 'sum'}).reset_index()
-                
-                def calc_pagas(row):
-                    vencidas = df_all[(df_all['descricao'] == row['descricao']) & (df_all['cartao_nome'] == row['cartao_nome']) & (df_all['data'] <= hoje)]
-                    return len(vencidas.drop_duplicates(subset=['data', 'parcela_atual']))
                 
                 for index, row in resumo.iterrows():
                     with st.container():
-                        c1, c2, c3, c4 = st.columns([2, 1, 1, 1])
+                        c1, c2, c3 = st.columns([2, 1, 1])
                         c1.write(f"**{row['descricao']}** ({row['cartao_nome']})")
+                        c2.write(f"Valor Total: **{format_real(row['valor'])}**")
                         
-                        pagas = calc_pagas(row)
-                        c2.write(f"Parcelas: {row['total_parcelas']}/{pagas}")
-                        c3.write(format_real(row['valor']))
-                        
-                        if c4.button("Excluir Compra", key=f"del_compra_{index}"):
-                            # Exclui todas as parcelas que batem com a descrição e o cartão
+                        if c3.button("Excluir Compra", key=f"del_compra_{index}"):
                             supabase.table("lancamentos").delete().eq("user_id", u_id).eq("descricao", row['descricao']).eq("cartao_nome", row['cartao_nome']).execute()
-                            st.success(f"Compra '{row['descricao']}' removida!")
+                            st.success(f"Compra removida!")
                             st.rerun()
                         st.divider()
+            else:
+                st.info("Sem compras parceladas.")
 
         with tab3:
             c_a, c_b = st.columns(2)
