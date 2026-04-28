@@ -132,31 +132,50 @@ else:
             df['data'] = pd.to_datetime(df['data'])
             df['MesAno'] = df['data'].dt.strftime('%m/%Y')
             
-            # Lógica para sempre iniciar no mês atual
-            hoje_str = date.today().strftime('%m/%Y')
-            meses_disponiveis = sorted(df['MesAno'].unique(), reverse=True)
+            aba_mensal, aba_periodo = st.tabs(["Mês Individual", "Resultado por Período"])
             
-            # Define o index padrão para o mês atual se ele existir na lista
-            try:
-                idx_padrao = meses_disponiveis.index(hoje_str)
-            except ValueError:
-                idx_padrao = 0
+            with aba_mensal:
+                hoje_str = date.today().strftime('%m/%Y')
+                meses_disponiveis = sorted(df['MesAno'].unique(), reverse=True)
+                try:
+                    idx_padrao = meses_disponiveis.index(hoje_str)
+                except ValueError:
+                    idx_padrao = 0
 
-            mes_sel = st.selectbox("Mês", meses_disponiveis, index=idx_padrao)
-            df_mes = df[df['MesAno'] == mes_sel].copy()
-            
-            c1, c2, c3 = st.columns(3)
-            rec = df_mes[df_mes['tipo'] == 'Receita']['valor'].sum()
-            des = df_mes[df_mes['tipo'] == 'Despesa']['valor'].sum()
-            c1.metric("Entradas", format_real(rec))
-            c2.metric("Saídas", format_real(des))
-            c3.metric("Saldo", format_real(rec - des))
-            
-            st.markdown("### Extrato Detalhado")
-            df_mes['Data'] = df_mes['data'].dt.strftime('%d/%m/%Y')
-            df_mes['Valor R$'] = df_mes['valor'].apply(format_real)
-            df_mes['Origem'] = df_mes['cartao_nome'].fillna("Dinheiro/Pix")
-            st.dataframe(df_mes[['Data', 'descricao', 'Origem', 'tipo', 'Valor R$']], use_container_width=True)
+                mes_sel = st.selectbox("Selecione o Mês", meses_disponiveis, index=idx_padrao)
+                df_mes = df[df['MesAno'] == mes_sel].copy()
+                
+                c1, c2, c3 = st.columns(3)
+                rec = df_mes[df_mes['tipo'] == 'Receita']['valor'].sum()
+                des = df_mes[df_mes['tipo'] == 'Despesa']['valor'].sum()
+                c1.metric("Entradas", format_real(rec))
+                c2.metric("Saídas", format_real(des))
+                c3.metric("Saldo", format_real(rec - des))
+                
+                st.markdown("### Extrato Detalhado")
+                df_mes['Data'] = df_mes['data'].dt.strftime('%d/%m/%Y')
+                df_mes['Valor R$'] = df_mes['valor'].apply(format_real)
+                df_mes['Origem'] = df_mes['cartao_nome'].fillna("Dinheiro/Pix")
+                st.dataframe(df_mes[['Data', 'descricao', 'Origem', 'tipo', 'Valor R$']], use_container_width=True)
+
+            with aba_periodo:
+                st.markdown("### Comparativo Mensal (Receitas x Despesas)")
+                # Agrupar por MesAno e Tipo
+                df_periodo = df.groupby(['MesAno', 'tipo'])['valor'].sum().unstack(fill_value=0)
+                
+                # Garantir que as colunas existam
+                if 'Receita' not in df_periodo.columns: df_periodo['Receita'] = 0
+                if 'Despesa' not in df_periodo.columns: df_periodo['Despesa'] = 0
+                
+                df_periodo['Resultado'] = df_periodo['Receita'] - df_periodo['Despesa']
+                
+                # Formatação para exibição
+                df_view = df_periodo.copy()
+                df_view['Receita'] = df_view['Receita'].apply(format_real)
+                df_view['Despesa'] = df_view['Despesa'].apply(format_real)
+                df_view['Resultado'] = df_view['Resultado'].apply(format_real)
+                
+                st.dataframe(df_view[['Receita', 'Despesa', 'Resultado']], use_container_width=True)
 
     elif menu == "Cartões de Crédito":
         st.header("💳 Gestão de Cartões")
