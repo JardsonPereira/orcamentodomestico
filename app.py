@@ -5,67 +5,66 @@ from datetime import date
 from dateutil.relativedelta import relativedelta
 
 # --- CONFIGURAÇÃO SUPABASE ---
-# No Streamlit Cloud, configure estes valores em Settings > Secrets
+# No Streamlit Cloud, configure em: Settings > Secrets
 try:
     URL = st.secrets["SUPABASE_URL"]
     KEY = st.secrets["SUPABASE_KEY"]
     supabase: Client = create_client(URL, KEY)
 except Exception:
-    st.error("Erro: Configurações do Supabase não encontradas. Verifique os Secrets.")
+    st.error("Erro: Credenciais do Supabase não configuradas nos Secrets.")
     st.stop()
 
-st.set_page_config(page_title="Orçamento Doméstico", layout="wide", page_icon="💰")
+st.set_page_config(page_title="Gestão Financeira", layout="wide", page_icon="💰")
 
 # --- ESTADO DA SESSÃO ---
 if 'user' not in st.session_state:
     st.session_state.user = None
 
-# --- FUNÇÕES AUXILIARES ---
-def format_moeda(valor):
-    """Formata valor numérico para String em Real R$"""
-    return f"R$ {valor:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
+# --- FUNÇÕES DE UTILIDADE ---
+def format_real(valor):
+    """Formata um número para o padrão brasileiro: R$ 1.234,56"""
+    return f"R$ {valor:,.2f}".replace(",", "v").replace(".", ",").replace("v", ".")
 
-# --- SISTEMA DE AUTENTICAÇÃO ---
-def login_form():
-    st.title("💰 Meu Orçamento Doméstico")
-    col_login, col_vazia = st.columns([1, 1])
+# --- AUTENTICAÇÃO ---
+def tela_login():
+    st.title("💰 Orçamento Doméstico")
+    col_l, col_r = st.columns([1, 1])
     
-    with col_login:
-        aba1, aba2 = st.tabs(["Entrar", "Criar Conta"])
+    with col_l:
+        aba_in, aba_up = st.tabs(["Entrar", "Cadastrar"])
         
-        with aba1:
+        with aba_in:
             email = st.text_input("E-mail")
             senha = st.text_input("Senha", type="password", key="login_pass")
-            if st.button("Acessar Sistema"):
+            if st.button("Aceder"):
                 try:
                     res = supabase.auth.sign_in_with_password({"email": email, "password": senha})
                     st.session_state.user = res.user
                     st.rerun()
-                except Exception:
-                    st.error("E-mail ou senha inválidos.")
+                except:
+                    st.error("Utilizador ou senha inválidos.")
 
-        with aba2:
+        with aba_up:
             novo_email = st.text_input("Novo E-mail")
             nova_senha = st.text_input("Nova Senha", type="password", key="reg_pass")
-            st.info("O cadastro não exige confirmação de e-mail (se configurado no Supabase).")
-            if st.button("Cadastrar"):
+            if st.button("Criar Conta"):
                 try:
+                    # Nota: Certifique-se de que "Confirm Email" está OFF no Supabase
                     res = supabase.auth.sign_up({"email": novo_email, "password": nova_senha})
                     if res.user:
-                        st.success("Conta criada! Você já pode fazer login.")
+                        st.success("Conta criada! Pode fazer login.")
                 except Exception as e:
-                    st.error(f"Erro ao cadastrar: {e}")
+                    st.error(f"Erro: {e}")
 
-# --- APLICAÇÃO LOGADA ---
+# --- APP PRINCIPAL ---
 if st.session_state.user is None:
-    login_form()
+    tela_login()
 else:
     u_id = st.session_state.user.id
+    st.sidebar.title("Menu Principal")
+    st.sidebar.write(f"Logado como: \n**{st.session_state.user.email}**")
     
-    # Barra Lateral
-    st.sidebar.title("Menu")
-    st.sidebar.write(f"👤 {st.session_state.user.email}")
-    menu = st.sidebar.radio("Ir para:", ["Dashboard Mensal", "Lançar Valores", "Cartões de Crédito"])
+    menu = st.sidebar.radio("Navegação", ["Dashboard Mensal", "Novo Lançamento", "Cartões de Crédito"])
     
     if st.sidebar.button("Sair"):
         supabase.auth.sign_out()
@@ -73,47 +72,43 @@ else:
         st.rerun()
 
     # --- ABA: LANÇAMENTOS ---
-    if menu == "Lançar Valores":
-        st.header("📝 Novo Lançamento")
+    if menu == "Novo Lançamento":
+        st.header("📝 Registar Movimentação")
         
-        with st.form("form_lancamento", clear_on_submit=True):
-            tipo = st.selectbox("Tipo de Lançamento", ["Receita", "Despesa"])
-            desc = st.text_input("Descrição (Ex: Aluguel, Supermercado)")
+        with st.form("form_lan"):
+            tipo = st.selectbox("Tipo", ["Receita", "Despesa"])
+            desc = st.text_input("Descrição (Ex: Salário, Aluguer, Compras)")
             valor_total = st.number_input("Valor Total (R$)", min_value=0.0, format="%.2f", step=0.01)
-            data_base = st.date_input("Data do Lançamento", date.today())
+            data_base = st.date_input("Data de Início", date.today())
             
-            # Busca cartões do usuário
+            # Buscar cartões do utilizador
             res_c = supabase.table("cartoes").select("nome_cartao").eq("user_id", u_id).execute()
             lista_cartoes = [c['nome_cartao'] for c in res_c.data]
             
-            cartao_sel = st.selectbox("Forma de Pagamento (Cartão)", ["Dinheiro / Pix"] + lista_cartoes)
-            parcelas = st.number_input("Quantidade de Parcelas", min_value=1, value=1)
+            cartao_sel = st.selectbox("Forma de Pagamento", ["Dinheiro/Pix/Débito"] + lista_cartoes)
+            parcelas = st.number_input("Número de Parcelas", min_value=1, value=1)
             
-            enviar = st.form_submit_button("Salvar Lançamento")
-            
-            if enviar:
+            if st.form_submit_button("Guardar Lançamento"):
                 if not desc or valor_total <= 0:
                     st.warning("Preencha a descrição e o valor.")
                 else:
-                    dados_para_inserir = []
-                    valor_parcela = valor_total / parcelas
-                    
+                    dados = []
+                    valor_parc = valor_total / parcelas
                     for i in range(parcelas):
-                        nova_data = data_base + relativedelta(months=i)
-                        dados_para_inserir.append({
+                        dados.append({
                             "user_id": u_id,
                             "tipo": tipo,
-                            "descricao": desc,
-                            "valor": round(float(valor_parcela), 2),
-                            "data": str(nova_data),
+                            "descricao": f"{desc} ({i+1}/{parcelas})" if parcelas > 1 else desc,
+                            "valor": round(float(valor_parc), 2),
+                            "data": str(data_base + relativedelta(months=i)),
                             "parcela_atual": i + 1,
                             "total_parcelas": parcelas,
-                            "cartao_nome": cartao_sel if cartao_sel != "Dinheiro / Pix" else None
+                            "cartao_nome": cartao_sel if cartao_sel != "Dinheiro/Pix/Débito" else None
                         })
                     
                     try:
-                        supabase.table("lancamentos").insert(dados_para_inserir).execute()
-                        st.success(f"Sucesso! {parcelas} parcela(s) lançada(s).")
+                        supabase.table("lancamentos").insert(dados).execute()
+                        st.success(f"Lançamento de {parcelas}x guardado com sucesso!")
                     except Exception as e:
                         st.error(f"Erro ao salvar: {e}")
 
@@ -128,68 +123,60 @@ else:
             df['data'] = pd.to_datetime(df['data'])
             df['MesAno'] = df['data'].dt.strftime('%m/%Y')
             
-            mes_escolhido = st.selectbox("Selecione o Mês para Visualizar", sorted(df['MesAno'].unique(), reverse=True))
+            meses_disp = sorted(df['MesAno'].unique(), reverse=True)
+            mes_sel = st.selectbox("Filtrar Mês", meses_disp)
             
-            df_mes = df[df['MesAno'] == mes_escolhido].copy()
+            df_mes = df[df['MesAno'] == mes_sel].copy()
             
-            # Métricas
-            rec = df_mes[df_mes['tipo'] == 'Receita']['valor'].sum()
-            des = df_mes[df_mes['tipo'] == 'Despesa']['valor'].sum()
-            saldo = rec - des
+            # Resumo Financeiro
+            receitas = df_mes[df_mes['tipo'] == 'Receita']['valor'].sum()
+            despesas = df_mes[df_mes['tipo'] == 'Despesa']['valor'].sum()
+            saldo = receitas - despesas
             
             c1, c2, c3 = st.columns(3)
-            c1.metric("Receitas", format_moeda(rec))
-            c2.metric("Despesas", format_moeda(des))
-            c3.metric("Saldo Mensal", format_moeda(saldo))
+            c1.metric("Receitas", format_real(receitas))
+            c2.metric("Despesas", format_real(despesas))
+            c3.metric("Saldo", format_real(saldo), delta=format_real(saldo))
             
             st.divider()
-            st.subheader(f"Detalhes de {mes_escolhido}")
+            st.subheader(f"Lista de Lançamentos - {mes_sel}")
             
-            # Preparar tabela para exibição
-            df_exibir = df_mes.copy()
-            df_exibir['Valor'] = df_exibir['valor'].apply(format_moeda)
-            df_exibir = df_exibir.rename(columns={'data': 'Data', 'descricao': 'Descrição', 'tipo': 'Tipo'})
+            df_view = df_mes.sort_values(by='data')
+            df_view['Valor'] = df_view['valor'].apply(format_real)
+            df_view['Data'] = df_view['data'].dt.strftime('%d/%m/%Y')
             
-            st.dataframe(df_exibir[['Data', 'Descrição', 'Tipo', 'Valor']], use_container_width=True)
-            
-            # Opção de Edição Simples
-            with st.expander("📝 Editar/Excluir Lançamentos"):
-                st.write("Para editar, altere diretamente na tabela abaixo (Funcionalidade de visualização)")
-                st.info("Dica: Você pode gerenciar os dados diretamente no painel do Supabase ou via código adicional.")
+            st.dataframe(df_view[['Data', 'descricao', 'tipo', 'Valor']], use_container_width=True)
         else:
-            st.info("Nenhum lançamento encontrado. Vá em 'Lançar Valores'.")
+            st.info("Ainda não tem lançamentos registados.")
 
     # --- ABA: CARTÕES ---
     elif menu == "Cartões de Crédito":
         st.header("💳 Gestão de Cartões")
         
-        aba_lista, aba_cad = st.tabs(["Meus Cartões e Parcelas", "Cadastrar Novo Cartão"])
+        tab_ver, tab_add = st.tabs(["Meus Cartões e Parcelas", "Novo Cartão"])
         
-        with aba_cad:
-            nome_novo_c = st.text_input("Nome do Cartão (Ex: Nubank, Inter)")
-            if st.button("Salvar Cartão"):
-                if nome_novo_c:
-                    supabase.table("cartoes").insert({"user_id": u_id, "nome_cartao": nome_novo_c}).execute()
-                    st.success("Cartão cadastrado!")
-                    st.rerun()
+        with tab_add:
+            nome_c = st.text_input("Nome do Cartão (Ex: Visa, Nubank)")
+            if st.button("Registar Cartão"):
+                if nome_c:
+                    try:
+                        supabase.table("cartoes").insert({"user_id": u_id, "nome_cartao": nome_c}).execute()
+                        st.success("Cartão registado!")
+                        st.rerun()
+                    except Exception as e:
+                        st.error("Erro: Tente novamente. Verifique se o RLS está ativo no Supabase.")
 
-        with aba_lista:
-            st.subheader("Lançamentos por Cartão")
-            res_l = supabase.table("lancamentos").select("*").eq("user_id", u_id).neq("cartao_nome", None).execute()
-            
-            if res_l.data:
-                df_c = pd.DataFrame(res_l.data)
-                # Formatação solicitada: 1/10
-                df_c['Parcela'] = df_c['parcela_atual'].astype(str) + "/" + df_c['total_parcelas'].astype(str)
-                df_c['Valor'] = df_c['valor'].apply(format_moeda)
+        with tab_ver:
+            res_p = supabase.table("lancamentos").select("*").eq("user_id", u_id).neq("cartao_nome", None).execute()
+            if res_p.data:
+                df_p = pd.DataFrame(res_p.data)
+                df_p['Parcelas'] = df_p['parcela_atual'].astype(str) + "/" + df_p['total_parcelas'].astype(str)
+                df_p['Valor Parcela'] = df_p['valor'].apply(format_real)
                 
-                # Filtro por nome do cartão
-                lista_nomes = df_c['cartao_nome'].unique()
-                cartao_filtro = st.selectbox("Filtrar por Cartão", ["Todos"] + list(lista_nomes))
-                
+                cartao_filtro = st.selectbox("Filtrar Cartão", ["Todos"] + list(df_p['cartao_nome'].unique()))
                 if cartao_filtro != "Todos":
-                    df_c = df_c[df_c['cartao_nome'] == cartao_filtro]
+                    df_p = df_p[df_p['cartao_nome'] == cartao_filtro]
                 
-                st.table(df_c[['data', 'cartao_nome', 'descricao', 'Parcela', 'Valor']])
+                st.table(df_p[['data', 'cartao_nome', 'descricao', 'Parcelas', 'Valor Parcela']])
             else:
-                st.write("Nenhuma despesa parcelada em cartão encontrada.")
+                st.info("Sem lançamentos de cartão de crédito.")
