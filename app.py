@@ -5,8 +5,8 @@ from dateutil.relativedelta import relativedelta
 import pandas as pd
 
 # Configurações do Supabase (Substitua pelos seus dados no dashboard do Supabase)
-SUPABASE_URL = "SUA_URL_AQUI"
-SUPABASE_KEY = "SUA_KEY_ANON_AQUI"
+SUPABASE_URL = "https://vgnqcmzekruecdizvmas.supabase.co"
+SUPABASE_KEY = "sb_publishable_lvhzDpeFBsSBTpi-O3HSvA_9dMvzKZV"
 supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
 
 st.set_page_config(page_title="Finanças Pro", layout="wide")
