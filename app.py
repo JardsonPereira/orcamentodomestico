@@ -58,7 +58,7 @@ else:
         st.header("📝 Novo Lançamento")
         with st.form("form_lan"):
             tipo = st.selectbox("Tipo", ["Receita", "Despesa"])
-            desc = st.text_input("Descrição (Ex: Notebook)")
+            desc = st.text_input("Descrição")
             valor_total = st.number_input("Valor Total da Compra (R$)", min_value=0.0, format="%.2f")
             dt_base = st.date_input("Data", date.today())
             res_c = supabase.table("cartoes").select("nome_cartao").eq("user_id", u_id).execute()
@@ -93,56 +93,69 @@ else:
             df_mes['Descrição'] = df_mes.apply(lambda x: f"{x['descricao']} ({x['parcela_atual']}/{x['total_parcelas']})" if x['total_parcelas'] > 1 else x['descricao'], axis=1)
             st.dataframe(df_mes[['data', 'Descrição', 'valor']], use_container_width=True)
 
-    # --- CARTÕES DE CRÉDITO (AQUI ESTÁ A MUDANÇA) ---
+    # --- CARTÕES DE CRÉDITO (ATUALIZADO) ---
     elif menu == "Cartões de Crédito":
-        st.header("💳 Resumo Total de Cartões")
-        tab1, tab2, tab3 = st.tabs(["Resumo Total", "Gerenciar Cartões", "Novo Cartão"])
+        st.header("💳 Gestão e Faturas de Cartões")
+        tab1, tab2, tab3 = st.tabs(["Fatura do Mês", "Resumo Total de Compras", "Gerenciar/Novo Cartão"])
 
-        with tab3:
-            n_c = st.text_input("Nome do Cartão")
-            if st.button("Salvar Cartão"):
-                supabase.table("cartoes").insert({"user_id": u_id, "nome_cartao": n_c}).execute()
-                st.rerun()
-
-        with tab2:
-            res_c = supabase.table("cartoes").select("*").eq("user_id", u_id).execute()
-            for c in res_c.data:
-                col_n, col_b = st.columns([3, 1])
-                col_n.write(f"💳 {c['nome_cartao']}")
-                if col_b.button("Excluir", key=c['id']):
-                    supabase.table("cartoes").delete().eq("id", c['id']).execute()
-                    st.rerun()
+        res_l = supabase.table("lancamentos").select("*").eq("user_id", u_id).neq("cartao_nome", None).execute()
+        df_all = pd.DataFrame(res_l.data) if res_l.data else pd.DataFrame()
+        hoje = pd.to_datetime(date.today())
 
         with tab1:
-            res_l = supabase.table("lancamentos").select("*").eq("user_id", u_id).neq("cartao_nome", None).execute()
-            if res_l.data:
-                df_all = pd.DataFrame(res_l.data)
+            st.subheader(f"📅 Fatura de {hoje.strftime('%m/%Y')}")
+            if not df_all.empty:
                 df_all['data'] = pd.to_datetime(df_all['data'])
-                hoje = pd.to_datetime(date.today())
-
-                # 1. Limpamos a descrição de qualquer resquício de "(1/10)" para garantir o agrupamento
-                df_all['descricao_limpa'] = df_all['descricao'].apply(lambda x: re.sub(r'\s\(\d+/\d+\)$', '', str(x)))
-
-                # 2. Agrupamos tudo pela descrição limpa e pelo cartão
-                # Isso faz com que as 10 linhas virem apenas 1 linha
-                resumo = df_all.groupby(['descricao_limpa', 'cartao_nome', 'total_parcelas']).agg({
-                    'valor': 'sum' # SOMA TOTAL
-                }).reset_index()
-
-                # 3. Contamos quantas parcelas já venceram (PAGAS)
-                def contar_pagas(row):
-                    total_pagas = len(df_all[(df_all['descricao_limpa'] == row['descricao_limpa']) & 
-                                            (df_all['cartao_nome'] == row['cartao_nome']) & 
-                                            (df_all['data'] <= hoje)])
-                    return total_pagas
-
-                resumo['pagas'] = resumo.apply(contar_pagas, axis=1)
+                # Filtra apenas o mês e ano atual
+                mes_atual = hoje.strftime('%m/%Y')
+                df_fatura = df_all[df_all['data'].dt.strftime('%m/%Y') == mes_atual].copy()
                 
-                # 4. Criamos as colunas finais
+                if not df_fatura.empty:
+                    # Mostra os gastos de cada cartão separadamente
+                    for cartao in df_fatura['cartao_nome'].unique():
+                        st.markdown(f"#### 💳 {cartao}")
+                        df_c = df_fatura[df_fatura['cartao_nome'] == cartao].copy()
+                        df_c['Parcela'] = df_c['parcela_atual'].astype(str) + "/" + df_c['total_parcelas'].astype(str)
+                        df_c['Valor'] = df_c['valor'].apply(format_real)
+                        
+                        st.table(df_c[['data', 'descricao', 'Parcela', 'Valor']])
+                        
+                        total_cartao = df_c['valor'].sum()
+                        st.write(f"**Total da Fatura {cartao}:** :green[{format_real(total_cartao)}]")
+                        st.divider()
+                else:
+                    st.info("Nenhum lançamento para este mês nos cartões.")
+            else:
+                st.info("Sem dados de cartões.")
+
+        with tab2:
+            st.subheader("📋 Histórico Total das Compras")
+            if not df_all.empty:
+                df_all['descricao_limpa'] = df_all['descricao'].apply(lambda x: re.sub(r'\s\(\d+/\d+\)$', '', str(x)))
+                resumo = df_all.groupby(['descricao_limpa', 'cartao_nome', 'total_parcelas']).agg({'valor': 'sum'}).reset_index()
+                
+                def contar_pagas(row):
+                    return len(df_all[(df_all['descricao_limpa'] == row['descricao_limpa']) & (df_all['cartao_nome'] == row['cartao_nome']) & (df_all['data'] <= hoje)])
+                
+                resumo['pagas'] = resumo.apply(contar_pagas, axis=1)
                 resumo['Status (Total/Pagas)'] = resumo['total_parcelas'].astype(str) + "/" + resumo['pagas'].astype(str)
                 resumo['Valor Total'] = resumo['valor'].apply(format_real)
-                
-                # Exibimos a tabela com UMA LINHA por lançamento
                 st.table(resumo[['cartao_nome', 'descricao_limpa', 'Status (Total/Pagas)', 'Valor Total']])
-            else:
-                st.info("Sem compras parceladas.")
+
+        with tab3:
+            col1, col2 = st.columns(2)
+            with col1:
+                st.subheader("Novo Cartão")
+                n_c = st.text_input("Nome do Cartão")
+                if st.button("Salvar Cartão"):
+                    supabase.table("cartoes").insert({"user_id": u_id, "nome_cartao": n_c}).execute()
+                    st.rerun()
+            with col2:
+                st.subheader("Lista de Cartões")
+                res_c = supabase.table("cartoes").select("*").eq("user_id", u_id).execute()
+                for c in res_c.data:
+                    c_col1, c_col2 = st.columns([3, 1])
+                    c_col1.write(f"💳 {c['nome_cartao']}")
+                    if c_col2.button("Excluir", key=c['id']):
+                        supabase.table("cartoes").delete().eq("id", c['id']).execute()
+                        st.rerun()
