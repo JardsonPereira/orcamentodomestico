@@ -3,7 +3,6 @@ from supabase import create_client, Client
 import pandas as pd
 from datetime import date
 from dateutil.relativedelta import relativedelta
-import re
 
 # --- CONFIGURAÇÃO SUPABASE ---
 try:
@@ -11,7 +10,7 @@ try:
     KEY = st.secrets["SUPABASE_KEY"]
     supabase: Client = create_client(URL, KEY)
 except Exception:
-    st.error("Erro: Credenciais do Supabase não encontradas.")
+    st.error("Erro: Credenciais do Supabase não encontradas nos Secrets.")
     st.stop()
 
 st.set_page_config(page_title="Gestão Financeira", layout="wide", page_icon="💰")
@@ -34,19 +33,20 @@ if st.session_state.user is None:
                 res = supabase.auth.sign_in_with_password({"email": email, "password": senha})
                 st.session_state.user = res.user
                 st.rerun()
-            except: st.error("Erro no login.")
+            except: st.error("Login inválido.")
     with aba_up:
         n_email = st.text_input("Novo E-mail")
         n_senha = st.text_input("Nova Senha", type="password")
         if st.button("Criar Conta"):
             try:
                 supabase.auth.sign_up({"email": n_email, "password": n_senha})
-                st.success("Conta criada!")
+                st.success("Conta criada! Tente logar.")
             except Exception as e: st.error(f"Erro: {e}")
 else:
     u_id = st.session_state.user.id
     st.sidebar.title("Menu")
     menu = st.sidebar.radio("Navegação", ["Dashboard Mensal", "Novo Lançamento", "Cartões de Crédito"])
+    
     if st.sidebar.button("Sair"):
         supabase.auth.sign_out()
         st.session_state.user = None
@@ -58,8 +58,9 @@ else:
         with st.form("form_lan"):
             tipo = st.selectbox("Tipo", ["Receita", "Despesa"])
             desc = st.text_input("Descrição")
-            valor_total = st.number_input("Valor Total (R$)", min_value=0.0, format="%.2f")
+            valor_total = st.number_input("Valor Total da Compra (R$)", min_value=0.0, format="%.2f")
             dt_base = st.date_input("Data", date.today())
+            
             res_c = supabase.table("cartoes").select("nome_cartao").eq("user_id", u_id).execute()
             lista_c = [c['nome_cartao'] for c in res_c.data]
             cartao_sel = st.selectbox("Cartão", ["Dinheiro/Pix"] + lista_c)
@@ -69,17 +70,18 @@ else:
                 v_parc = valor_total / parcelas
                 dados = []
                 for i in range(parcelas):
-                    # Guardamos a descrição limpa e adicionamos o sufixo apenas para o dashboard mensal
                     dados.append({
-                        "user_id": u_id, "tipo": tipo, 
-                        "descricao": desc, # Descrição limpa para agrupar fácil depois
+                        "user_id": u_id, 
+                        "tipo": tipo, 
+                        "descricao": desc, # Salvamos a descrição limpa para agrupar
                         "valor": round(float(v_parc), 2),
                         "data": str(dt_base + relativedelta(months=i)),
-                        "parcela_atual": i + 1, "total_parcelas": parcelas,
+                        "parcela_atual": i + 1, 
+                        "total_parcelas": parcelas,
                         "cartao_nome": cartao_sel if cartao_sel != "Dinheiro/Pix" else None
                     })
                 supabase.table("lancamentos").insert(dados).execute()
-                st.success("Salvo com sucesso!")
+                st.success("Lançamento guardado!")
 
     # --- DASHBOARD MENSAL ---
     elif menu == "Dashboard Mensal":
@@ -91,11 +93,17 @@ else:
             df['Mes'] = df['data'].dt.strftime('%m/%Y')
             mes_sel = st.selectbox("Mês", sorted(df['Mes'].unique(), reverse=True))
             df_mes = df[df['Mes'] == mes_sel].copy()
-            # No dashboard mensal, mostramos qual parcela é (ex: Compra 1/10)
-            df_mes['descricao_full'] = df_mes.apply(lambda x: f"{x['descricao']} ({x['parcela_atual']}/{x['total_parcelas']})" if x['total_parcelas'] > 1 else x['descricao'], axis=1)
-            st.dataframe(df_mes[['data', 'descricao_full', 'valor']], use_container_width=True)
+            
+            # No mensal, mostramos o sufixo (1/10) apenas visualmente
+            df_mes['Visualização'] = df_mes.apply(lambda x: f"{x['descricao']} ({x['parcela_atual']}/{x['total_parcelas']})" if x['total_parcelas'] > 1 else x['descricao'], axis=1)
+            
+            c1, c2 = st.columns(2)
+            c1.metric("Receitas", format_real(df_mes[df_mes['tipo']=='Receita']['valor'].sum()))
+            c2.metric("Despesas", format_real(df_mes[df_mes['tipo']=='Despesa']['valor'].sum()))
+            
+            st.dataframe(df_mes[['data', 'Visualização', 'valor']], use_container_width=True)
 
-    # --- CARTÕES DE CRÉDITO (CORRIGIDO) ---
+    # --- CARTÕES DE CRÉDITO (AGRUPADO PELO VALOR TOTAL) ---
     elif menu == "Cartões de Crédito":
         st.header("💳 Cartões de Crédito")
         tab1, tab2, tab3 = st.tabs(["Resumo de Compras", "Gerenciar Cartões", "Novo Cartão"])
@@ -122,27 +130,27 @@ else:
                 df_all['data'] = pd.to_datetime(df_all['data'])
                 hoje = pd.to_datetime(date.today())
 
-                # Agrupamento para mostrar apenas 1 linha por compra
-                # Somamos os valores e pegamos o máximo de parcelas
+                # AGRUPAMENTO: Unificamos as parcelas em uma única linha por compra
+                # Somamos o 'valor' para obter o TOTAL da compra
                 resumo = df_all.groupby(['descricao', 'cartao_nome', 'total_parcelas']).agg({
-                    'valor': 'sum',
-                    'data': 'min'
+                    'valor': 'sum'
                 }).reset_index()
 
-                # Lógica para contar parcelas pagas (data da parcela <= hoje)
-                def contar_pagas(row):
-                    temp = df_all[(df_all['descricao'] == row['descricao']) & 
-                                  (df_all['cartao_nome'] == row['cartao_nome']) & 
-                                  (df_all['data'] <= hoje)]
-                    return len(temp)
+                # Lógica para calcular parcelas pagas (baseado no mês atual)
+                def calcular_pagas(row):
+                    # Filtra todas as parcelas dessa compra específica que já venceram
+                    fatias = df_all[(df_all['descricao'] == row['descricao']) & 
+                                   (df_all['cartao_nome'] == row['cartao_nome']) & 
+                                   (df_all['data'] <= hoje)]
+                    return len(fatias)
 
-                resumo['pagas'] = resumo.apply(contar_pagas, axis=1)
+                resumo['pagas'] = resumo.apply(calcular_pagas, axis=1)
                 
                 # Formato solicitado: Total/Pagas (Ex: 10/1)
-                resumo['Parcelas'] = resumo['total_parcelas'].astype(str) + "/" + resumo['pagas'].astype(str)
-                resumo['Valor Total'] = resumo['valor'].apply(format_real)
+                resumo['Status Parcelas'] = resumo['total_parcelas'].astype(str) + "/" + resumo['pagas'].astype(str)
+                resumo['Valor Total da Compra'] = resumo['valor'].apply(format_real)
                 
-                # Tabela final limpa
-                st.table(resumo[['cartao_nome', 'descricao', 'Parcelas', 'Valor Total']])
+                # Exibe a tabela agrupada
+                st.table(resumo[['cartao_nome', 'descricao', 'Status Parcelas', 'Valor Total da Compra']])
             else:
                 st.info("Nenhuma compra parcelada encontrada.")
