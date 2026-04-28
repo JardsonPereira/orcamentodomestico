@@ -16,13 +16,10 @@ except Exception:
 
 st.set_page_config(page_title="Gestão Financeira", layout="wide", page_icon="💰")
 
-# --- ESTADO DA SESSÃO ---
 if 'user' not in st.session_state:
     st.session_state.user = None
 
-# --- FUNÇÕES DE UTILIDADE ---
 def format_real(valor):
-    """Formata número para padrão R$ 1.234,56"""
     return f"R$ {valor:,.2f}".replace(",", "v").replace(".", ",").replace("v", ".")
 
 # --- AUTENTICAÇÃO ---
@@ -52,7 +49,6 @@ def tela_login():
                 except Exception as e:
                     st.error(f"Erro: {e}")
 
-# --- APP PRINCIPAL ---
 if st.session_state.user is None:
     tela_login()
 else:
@@ -65,12 +61,12 @@ else:
         st.session_state.user = None
         st.rerun()
 
-    # --- ABA: LANÇAMENTOS ---
+    # --- ABA: LANÇAMENTOS (Parcelas removidas da descrição) ---
     if menu == "Novo Lançamento":
         st.header("📝 Registar Movimentação")
         with st.form("form_lan", clear_on_submit=True):
             tipo = st.selectbox("Tipo", ["Receita", "Despesa"])
-            desc = st.text_input("Descrição (Ex: Notebook, Supermercado)")
+            desc = st.text_input("Descrição")
             valor_total = st.number_input("Valor Total (R$)", min_value=0.0, format="%.2f", step=0.01)
             data_base = st.date_input("Data de Início/Compra", date.today())
             
@@ -89,14 +85,14 @@ else:
                     for i in range(parcelas):
                         dados.append({
                             "user_id": u_id, "tipo": tipo,
-                            "descricao": desc, # Salvamos a descrição limpa
+                            "descricao": desc, # APENAS A DESCRIÇÃO PURA
                             "valor": round(float(valor_parc), 2),
                             "data": str(data_base + relativedelta(months=i)),
                             "parcela_atual": i + 1, "total_parcelas": parcelas,
                             "cartao_nome": cartao_sel if cartao_sel != "Dinheiro/Pix/Débito" else None
                         })
                     supabase.table("lancamentos").insert(dados).execute()
-                    st.success(f"Lançamento de {parcelas}x guardado!")
+                    st.success(f"Lançamento guardado!")
 
     # --- ABA: DASHBOARD MENSAL ---
     elif menu == "Dashboard Mensal":
@@ -108,7 +104,6 @@ else:
             df['MesAno'] = df['data'].dt.strftime('%m/%Y')
             mes_sel = st.selectbox("Selecione o Mês", sorted(df['MesAno'].unique(), reverse=True))
             
-            # Filtro e Remoção de Duplicados
             df_mes = df[df['MesAno'] == mes_sel].copy()
             df_mes = df_mes.drop_duplicates(subset=['data', 'descricao', 'valor', 'parcela_atual'])
             
@@ -120,11 +115,11 @@ else:
             c3.metric("Saldo", format_real(rec - des))
             
             st.divider()
-            df_mes['Exibição'] = df_mes.apply(lambda x: f"{x['descricao']} ({x['parcela_atual']}/{x['total_parcelas']})" if x['total_parcelas'] > 1 else x['descricao'], axis=1)
             df_mes['Valor R$'] = df_mes['valor'].apply(format_real)
             df_mes['Data'] = df_mes['data'].dt.strftime('%d/%m/%Y')
             
-            st.dataframe(df_mes[['Data', 'Exibição', 'tipo', 'Valor R$']], use_container_width=True)
+            # Exibe a descrição pura sem o sufixo (1/10)
+            st.dataframe(df_mes[['Data', 'descricao', 'tipo', 'Valor R$']], use_container_width=True)
         else:
             st.info("Nenhum lançamento encontrado.")
 
@@ -159,18 +154,16 @@ else:
         with tab2:
             st.subheader("📋 Histórico Total Agrupado")
             if not df_all.empty:
-                # Agrupamento para mostrar apenas 1 linha por compra total
-                df_all['desc_limpa'] = df_all['descricao'].apply(lambda x: re.sub(r'\s\(\d+/\d+\)$', '', str(x)))
-                resumo = df_all.groupby(['desc_limpa', 'cartao_nome', 'total_parcelas']).agg({'valor': 'sum'}).reset_index()
+                resumo = df_all.groupby(['descricao', 'cartao_nome', 'total_parcelas']).agg({'valor': 'sum'}).reset_index()
                 
                 def calc_pagas(row):
-                    vencidas = df_all[(df_all['desc_limpa'] == row['desc_limpa']) & (df_all['cartao_nome'] == row['cartao_nome']) & (df_all['data'] <= hoje)]
+                    vencidas = df_all[(df_all['descricao'] == row['descricao']) & (df_all['cartao_nome'] == row['cartao_nome']) & (df_all['data'] <= hoje)]
                     return len(vencidas.drop_duplicates(subset=['data', 'parcela_atual']))
                 
                 resumo['pagas'] = resumo.apply(calc_pagas, axis=1)
                 resumo['Status (Total/Pagas)'] = resumo['total_parcelas'].astype(str) + "/" + resumo['pagas'].astype(str)
                 resumo['Valor Total Compra'] = resumo['valor'].apply(format_real)
-                st.table(resumo[['cartao_nome', 'desc_limpa', 'Status (Total/Pagas)', 'Valor Total Compra']])
+                st.table(resumo[['cartao_nome', 'descricao', 'Status (Total/Pagas)', 'Valor Total Compra']])
 
         with tab3:
             c_a, c_b = st.columns(2)
