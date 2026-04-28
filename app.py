@@ -141,25 +141,23 @@ else:
             st.subheader("📋 Status de Compras Parceladas")
             if not df_all.empty:
                 df_all['data'] = pd.to_datetime(df_all['data'])
-                # Agrupamos para identificar cada compra única
                 grupos = df_all.groupby(['descricao', 'cartao_nome'])
                 
                 for (desc, cartao), df_compra in grupos:
                     with st.container():
-                        c1, c2, c3, c4 = st.columns([1.5, 1, 1, 0.5])
+                        # Ajuste das colunas para caber o Valor Total
+                        c1, c2, c3, c4, c5 = st.columns([1.5, 1, 1, 1, 0.5])
                         
-                        # Data da última parcela
-                        data_ultima = df_compra['data'].max().strftime('%d/%m/%Y')
-                        # Saldo restante (hoje em diante)
-                        saldo_restante = df_compra[df_compra['data'].dt.date >= date.today()]['valor'].sum()
-                        # Valor total original da compra
                         valor_total_orig = df_compra['valor'].sum()
+                        data_ultima = df_compra['data'].max().strftime('%d/%m/%Y')
+                        saldo_restante = df_compra[df_compra['data'].dt.date >= date.today()]['valor'].sum()
 
                         c1.write(f"**{desc}** ({cartao})")
-                        c2.write(f"Última parc: **{data_ultima}**")
-                        c3.write(f"Saldo devedor: **{format_real(saldo_restante)}**")
+                        c2.write(f"Total Compra: **{format_real(valor_total_orig)}**")
+                        c3.write(f"Saldo Devedor: **{format_real(saldo_restante)}**")
+                        c4.write(f"Última: {data_ultima}")
                         
-                        if c4.button("Excluir", key=f"del_c_{desc}_{cartao}"):
+                        if c5.button("❌", key=f"del_c_{desc}_{cartao}"):
                             supabase.table("lancamentos").delete().eq("user_id", u_id).eq("descricao", desc).eq("cartao_nome", cartao).execute()
                             st.rerun()
                         st.divider()
