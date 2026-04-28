@@ -94,7 +94,7 @@ else:
                     supabase.table("lancamentos").insert(dados).execute()
                     st.success(f"Lançamento guardado!")
 
-    # --- ABA: DASHBOARD MENSAL ---
+    # --- ABA: DASHBOARD MENSAL (CORRIGIDA) ---
     elif menu == "Dashboard Mensal":
         st.header("📊 Resumo Mensal")
         res = supabase.table("lancamentos").select("*").eq("user_id", u_id).execute()
@@ -105,7 +105,10 @@ else:
             mes_sel = st.selectbox("Selecione o Mês", sorted(df['MesAno'].unique(), reverse=True))
             
             df_mes = df[df['MesAno'] == mes_sel].copy()
-            df_mes = df_mes.drop_duplicates(subset=['data', 'descricao', 'valor', 'parcela_atual'])
+            
+            # Correção: O drop_duplicates agora considera a ID única ou a parcela atual 
+            # para não sumir com os lançamentos de cartão que têm o mesmo valor
+            df_mes = df_mes.drop_duplicates(subset=['id']) 
             
             c1, c2, c3 = st.columns(3)
             rec = df_mes[df_mes['tipo'] == 'Receita']['valor'].sum()
@@ -118,7 +121,10 @@ else:
             df_mes['Valor R$'] = df_mes['valor'].apply(format_real)
             df_mes['Data'] = df_mes['data'].dt.strftime('%d/%m/%Y')
             
-            st.dataframe(df_mes[['Data', 'descricao', 'tipo', 'Valor R$']], use_container_width=True)
+            # Adicionamos uma coluna de info extra apenas para o Dashboard saber se é cartão
+            df_mes['Origem'] = df_mes['cartao_nome'].fillna("Dinheiro/Pix")
+            
+            st.dataframe(df_mes[['Data', 'descricao', 'Origem', 'tipo', 'Valor R$']], use_container_width=True)
         else:
             st.info("Nenhum lançamento encontrado.")
 
@@ -136,7 +142,6 @@ else:
             if not df_all.empty:
                 df_all['data'] = pd.to_datetime(df_all['data'])
                 df_fatura = df_all[df_all['data'].dt.strftime('%m/%Y') == hoje.strftime('%m/%Y')].copy()
-                df_fatura = df_fatura.drop_duplicates(subset=['data', 'descricao', 'valor', 'parcela_atual'])
                 
                 if not df_fatura.empty:
                     for cartao in df_fatura['cartao_nome'].unique():
@@ -153,7 +158,6 @@ else:
         with tab2:
             st.subheader("📋 Resumo Total de Compras")
             if not df_all.empty:
-                # Agrupamento para mostrar apenas o valor total da compra original
                 resumo = df_all.groupby(['descricao', 'cartao_nome', 'total_parcelas']).agg({'valor': 'sum'}).reset_index()
                 
                 for index, row in resumo.iterrows():
