@@ -2,46 +2,59 @@ import streamlit as st
 from supabase import create_client, Client
 import pandas as pd
 from datetime import datetime
-import calendar
 import os
 
-# --- CONFIGURAÇÃO DA LOGO ---
-# Substitua SEU_USUARIO_GITHUB pelo seu nome de usuário real
-GITHUB_USER = "JardsonPereira" 
-NOME_REPO = "orcamentodomestico"
-LINK_LOGO = f"https://raw.githubusercontent.com/{GITHUB_USER}/{NOME_REPO}/main/logo.png"
+# --- 1. CONFIGURAÇÃO DO LINK DA LOGO (Link Direto do seu GitHub) ---
+# Substitua pelo seu usuário real do GitHub
+USUARIO_GITHUB = "JardsonPereira" 
+REPO_GITHUB = "orcamentodomestico"
+URL_LOGO = f"https://raw.githubusercontent.com/{USUARIO_GITHUB}/{REPO_GITHUB}/main/logo.png"
 
-# --- CONEXÃO SEGURA ---
+# --- 2. CONEXÃO SUPABASE ---
 try:
     URL = st.secrets["SUPABASE_URL"]
     KEY = st.secrets["SUPABASE_KEY"]
     supabase: Client = create_client(URL, KEY)
 except:
-    st.error("Erro nas credenciais do Supabase.")
+    st.error("Erro nas credenciais.")
     st.stop()
 
-# --- INICIALIZAÇÃO DO STATE ---
-if "logado" not in st.session_state: st.session_state.logado = False
-if "user_email" not in st.session_state: st.session_state.user_email = ""
-
+# --- 3. CONFIGURAÇÃO DA PÁGINA ---
 def main():
-    # 1. SET_PAGE_CONFIG
+    # O set_page_config precisa ser o primeiro
     st.set_page_config(
-        page_title="ContabilApp V2",
+        page_title="ContabilApp Pro",
         layout="wide",
-        page_icon=LINK_LOGO # Usando o link direto aqui também
+        page_icon=URL_LOGO
     )
 
-    # 2. INJEÇÃO DE CABEÇALHO PARA FORÇAR A LOGO
-    # Usamos o link direto do GitHub porque o celular confia mais em URLs HTTPS
+    # 4. INJEÇÃO DE CÓDIGO PARA "FORÇAR" O NAVEGADOR
+    # Este bloco tenta sobrescrever o comportamento do Streamlit Cloud
     st.markdown(f"""
+        <script>
+            // Tenta mudar o título da aba e o ícone via JavaScript após o carregamento
+            window.onload = function() {{
+                var link = document.querySelector("link[rel*='icon']") || document.createElement('link');
+                link.type = 'image/png';
+                link.rel = 'shortcut icon';
+                link.href = '{URL_LOGO}';
+                document.getElementsByTagName('head')[0].appendChild(link);
+                
+                // Força o título para o PWA
+                document.title = "ContabilApp Pro";
+            }}
+        </script>
+        
         <head>
-            <link rel="icon" type="image/png" href="{LINK_LOGO}">
-            <link rel="apple-touch-icon" href="{LINK_LOGO}">
-            <link rel="shortcut icon" href="{LINK_LOGO}">
+            <link rel="icon" type="image/png" href="{URL_LOGO}">
+            <link rel="apple-touch-icon" sizes="180x180" href="{URL_LOGO}">
+            <meta name="mobile-web-app-capable" content="yes">
+            <meta name="apple-mobile-web-app-capable" content="yes">
             <meta name="apple-mobile-web-app-title" content="ContabilApp Pro">
             <meta name="application-name" content="ContabilApp Pro">
+            <meta name="theme-color" content="#007BFF">
         </head>
+        
         <style>
             @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap');
             html, body, [class*="st-"] {{ font-family: 'Inter', sans-serif; }}
@@ -50,39 +63,27 @@ def main():
         </style>
     """, unsafe_allow_html=True)
 
+    # --- INTERFACE DE LOGIN ---
+    if "logado" not in st.session_state:
+        st.session_state.logado = False
+
     if not st.session_state.logado:
-        # Mostra a logo para confirmar que o link está funcionando
-        st.image(LINK_LOGO, width=120)
-        
+        st.image(URL_LOGO, width=120)
         st.markdown("<h1 style='text-align: center;'>💰 ContabilApp Pro</h1>", unsafe_allow_html=True)
         
-        _, col_central, _ = st.columns([1, 2, 1])
-        with col_central:
-            escolha = st.radio("Acesso", ["Entrar na Conta", "Criar Nova Conta"], horizontal=True, label_visibility="collapsed")
-            
-            if escolha == "Entrar na Conta":
-                email_login = st.text_input("E-mail", key="email_log").strip()
-                senha_login = st.text_input("Senha", type='password', key="pass_log")
-                if st.button("ACESSAR SISTEMA"):
-                    try:
-                        res = supabase.auth.sign_in_with_password({"email": email_login, "password": senha_login})
-                        if res.user:
-                            st.session_state.logado = True
-                            st.session_state.user_email = email_login
-                            st.rerun()
-                    except:
-                        st.error("E-mail ou senha incorretos.")
-            else:
-                novo_email = st.text_input("E-mail para cadastro").strip()
-                nova_senha = st.text_input("Senha para cadastro", type='password')
-                if st.button("CADASTRAR"):
-                    try:
-                        supabase.auth.sign_up({"email": novo_email, "password": nova_senha})
-                        st.success("Conta criada! Verifique o e-mail.")
-                    except Exception as e:
-                        st.error(f"Erro: {e}")
+        email = st.text_input("E-mail").strip()
+        senha = st.text_input("Senha", type="password")
+        
+        if st.button("ACESSAR"):
+            try:
+                res = supabase.auth.sign_in_with_password({"email": email, "password": senha})
+                if res.user:
+                    st.session_state.logado = True
+                    st.rerun()
+            except:
+                st.error("Credenciais inválidas.")
     else:
-        st.title(f"Olá, {st.session_state.user_email}")
+        st.success("Logado com sucesso!")
         if st.button("Sair"):
             st.session_state.logado = False
             st.rerun()
