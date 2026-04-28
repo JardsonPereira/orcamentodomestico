@@ -131,7 +131,18 @@ else:
             df = pd.DataFrame(res.data)
             df['data'] = pd.to_datetime(df['data'])
             df['MesAno'] = df['data'].dt.strftime('%m/%Y')
-            mes_sel = st.selectbox("Mês", sorted(df['MesAno'].unique(), reverse=True))
+            
+            # Lógica para sempre iniciar no mês atual
+            hoje_str = date.today().strftime('%m/%Y')
+            meses_disponiveis = sorted(df['MesAno'].unique(), reverse=True)
+            
+            # Define o index padrão para o mês atual se ele existir na lista
+            try:
+                idx_padrao = meses_disponiveis.index(hoje_str)
+            except ValueError:
+                idx_padrao = 0
+
+            mes_sel = st.selectbox("Mês", meses_disponiveis, index=idx_padrao)
             df_mes = df[df['MesAno'] == mes_sel].copy()
             
             c1, c2, c3 = st.columns(3)
