@@ -54,14 +54,14 @@ if st.session_state.user is None:
 else:
     u_id = st.session_state.user.id
     st.sidebar.title("💰 Menu Financeiro")
-    menu = st.sidebar.radio("Navegação", ["Dashboard Mensal", "Novo Lançamento", "Cartões de Crédito"])
+    menu = st.sidebar.radio("Navegação", ["Dashboard Mensal", "Novo Lançamento", "Cartões de Crédito", "Gerenciar Lançamentos (Outros)"])
     
     if st.sidebar.button("Sair"):
         supabase.auth.sign_out()
         st.session_state.user = None
         st.rerun()
 
-    # --- ABA: LANÇAMENTOS (Parcelas removidas da descrição) ---
+    # --- ABA: LANÇAMENTOS ---
     if menu == "Novo Lançamento":
         st.header("📝 Registar Movimentação")
         with st.form("form_lan", clear_on_submit=True):
@@ -85,7 +85,7 @@ else:
                     for i in range(parcelas):
                         dados.append({
                             "user_id": u_id, "tipo": tipo,
-                            "descricao": desc, # APENAS A DESCRIÇÃO PURA
+                            "descricao": desc,
                             "valor": round(float(valor_parc), 2),
                             "data": str(data_base + relativedelta(months=i)),
                             "parcela_atual": i + 1, "total_parcelas": parcelas,
@@ -118,7 +118,6 @@ else:
             df_mes['Valor R$'] = df_mes['valor'].apply(format_real)
             df_mes['Data'] = df_mes['data'].dt.strftime('%d/%m/%Y')
             
-            # Exibe a descrição pura sem o sufixo (1/10)
             st.dataframe(df_mes[['Data', 'descricao', 'tipo', 'Valor R$']], use_container_width=True)
         else:
             st.info("Nenhum lançamento encontrado.")
@@ -179,6 +178,33 @@ else:
                 for c in res_c.data:
                     col_x, col_y = st.columns([3, 1])
                     col_x.write(f"💳 {c['nome_cartao']}")
-                    if col_y.button("❌", key=c['id']):
+                    if col_y.button("❌", key=f"del_card_{c['id']}"):
                         supabase.table("cartoes").delete().eq("id", c['id']).execute()
                         st.rerun()
+
+    # --- NOVA ABA: GERENCIAR LANÇAMENTOS (DINHEIRO/PIX/DÉBITO) ---
+    elif menu == "Gerenciar Lançamentos (Outros)":
+        st.header("⚙️ Gerenciar Lançamentos (Outros)")
+        st.info("Aqui você pode excluir lançamentos que não são de cartão de crédito.")
+        
+        # Busca apenas lançamentos onde cartao_nome é nulo
+        res_o = supabase.table("lancamentos").select("*").eq("user_id", u_id).is_("cartao_nome", "null").execute()
+        
+        if res_o.data:
+            df_o = pd.DataFrame(res_o.data)
+            df_o['data'] = pd.to_datetime(df_o['data'])
+            df_o = df_o.sort_values(by='data', ascending=False)
+            
+            for index, row in df_o.iterrows():
+                with st.container():
+                    col1, col2, col3, col4 = st.columns([1, 2, 1, 1])
+                    col1.write(row['data'].strftime('%d/%m/%Y'))
+                    col2.write(row['descricao'])
+                    col3.write(format_real(row['valor']))
+                    if col4.button("Excluir", key=f"del_lan_{row['id']}"):
+                        supabase.table("lancamentos").delete().eq("id", row['id']).execute()
+                        st.success("Lançamento excluído!")
+                        st.rerun()
+                    st.divider()
+        else:
+            st.write("Nenhum lançamento (não cartão) encontrado.")
