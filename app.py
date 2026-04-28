@@ -82,7 +82,7 @@ else:
                 supabase.table("lancamentos").insert(dados).execute()
                 st.success("Salvo com sucesso!")
 
-    # --- ABA: DASHBOARD MENSAL (LÓGICA REFEITA) ---
+    # --- ABA: DASHBOARD MENSAL ---
     elif menu == "Dashboard Mensal":
         st.header("📊 Resumo Mensal")
         res = supabase.table("lancamentos").select("*").eq("user_id", u_id).execute()
@@ -92,14 +92,10 @@ else:
             df['data'] = pd.to_datetime(df['data'])
             df['MesAno'] = df['data'].dt.strftime('%m/%Y')
             
-            # Filtro de Mês
             meses = sorted(df['MesAno'].unique(), reverse=True)
             mes_sel = st.selectbox("Mês", meses)
-            
-            # Filtragem dos dados do mês
             df_mes = df[df['MesAno'] == mes_sel].copy()
             
-            # MÉTRICAS
             c1, c2, c3 = st.columns(3)
             receitas = df_mes[df_mes['tipo'] == 'Receita']['valor'].sum()
             despesas = df_mes[df_mes['tipo'] == 'Despesa']['valor'].sum()
@@ -108,13 +104,10 @@ else:
             c3.metric("Saldo", format_real(receitas - despesas))
             
             st.divider()
-            
-            # PREPARAÇÃO DA TABELA
             df_mes['Data'] = df_mes['data'].dt.strftime('%d/%m/%Y')
             df_mes['Valor R$'] = df_mes['valor'].apply(format_real)
             df_mes['Pagamento'] = df_mes['cartao_nome'].fillna("Dinheiro/Pix")
             
-            # Exibição
             st.subheader("Lista de Lançamentos")
             st.dataframe(df_mes[['Data', 'descricao', 'Pagamento', 'tipo', 'Valor R$']], use_container_width=True)
         else:
@@ -151,16 +144,36 @@ else:
                     c1, c2, c3 = st.columns([2,1,1])
                     c1.write(f"**{row['descricao']}** ({row['cartao_nome']})")
                     c2.write(format_real(row['valor']))
-                    if c3.button("Excluir", key=f"btn_del_{idx}"):
+                    if c3.button("Excluir Compra", key=f"btn_del_compra_{idx}"):
                         supabase.table("lancamentos").delete().eq("user_id", u_id).eq("descricao", row['descricao']).eq("cartao_nome", row['cartao_nome']).execute()
                         st.rerun()
 
         with tab3:
-            st.subheader("Novo Cartão")
-            n_c = st.text_input("Nome do Cartão")
-            if st.button("Adicionar"):
-                supabase.table("cartoes").insert({"user_id": u_id, "nome_cartao": n_c}).execute()
-                st.rerun()
+            st.subheader("Gerenciar Cartões")
+            col_nc, col_lc = st.columns([1, 1])
+            
+            with col_nc:
+                st.write("**Novo Cartão**")
+                n_c = st.text_input("Nome do Cartão (ex: Nubank)")
+                if st.button("Adicionar"):
+                    if n_c:
+                        supabase.table("cartoes").insert({"user_id": u_id, "nome_cartao": n_c}).execute()
+                        st.rerun()
+            
+            with col_lc:
+                st.write("**Cartões Cadastrados**")
+                res_c = supabase.table("cartoes").select("*").eq("user_id", u_id).execute()
+                for c in res_c.data:
+                    c1, c2 = st.columns([3, 1])
+                    c1.write(f"💳 {c['nome_cartao']}")
+                    # Botão para deletar cartão e suas compras
+                    if c2.button("❌", key=f"del_card_{c['id']}"):
+                        # 1. Deletar compras associadas
+                        supabase.table("lancamentos").delete().eq("user_id", u_id).eq("cartao_nome", c['nome_cartao']).execute()
+                        # 2. Deletar o cartão
+                        supabase.table("cartoes").delete().eq("id", c['id']).execute()
+                        st.success(f"Cartão {c['nome_cartao']} e suas compras foram excluídos.")
+                        st.rerun()
 
     # --- ABA: GERENCIAR OUTROS ---
     elif menu == "Gerenciar Lançamentos (Outros)":
