@@ -61,7 +61,7 @@ else:
         st.session_state.user = None
         st.rerun()
 
-    # --- ABA: LANÇAMENTOS ---
+    # --- ABA: NOVO LANÇAMENTO ---
     if menu == "Novo Lançamento":
         st.header("📝 Registar Movimentação")
         with st.form("form_lan", clear_on_submit=True):
@@ -151,18 +151,31 @@ else:
                     st.info("Sem parcelas para este mês.")
 
         with tab2:
-            st.subheader("📋 Histórico Total Agrupado")
+            st.subheader("📋 Gerenciar Compras Totais")
+            st.info("Ao excluir uma compra aqui, todas as parcelas futuras e passadas dela serão removidas.")
             if not df_all.empty:
+                # Agrupamos para mostrar a compra total
                 resumo = df_all.groupby(['descricao', 'cartao_nome', 'total_parcelas']).agg({'valor': 'sum'}).reset_index()
                 
                 def calc_pagas(row):
                     vencidas = df_all[(df_all['descricao'] == row['descricao']) & (df_all['cartao_nome'] == row['cartao_nome']) & (df_all['data'] <= hoje)]
                     return len(vencidas.drop_duplicates(subset=['data', 'parcela_atual']))
                 
-                resumo['pagas'] = resumo.apply(calc_pagas, axis=1)
-                resumo['Status (Total/Pagas)'] = resumo['total_parcelas'].astype(str) + "/" + resumo['pagas'].astype(str)
-                resumo['Valor Total Compra'] = resumo['valor'].apply(format_real)
-                st.table(resumo[['cartao_nome', 'descricao', 'Status (Total/Pagas)', 'Valor Total Compra']])
+                for index, row in resumo.iterrows():
+                    with st.container():
+                        c1, c2, c3, c4 = st.columns([2, 1, 1, 1])
+                        c1.write(f"**{row['descricao']}** ({row['cartao_nome']})")
+                        
+                        pagas = calc_pagas(row)
+                        c2.write(f"Parcelas: {row['total_parcelas']}/{pagas}")
+                        c3.write(format_real(row['valor']))
+                        
+                        if c4.button("Excluir Compra", key=f"del_compra_{index}"):
+                            # Exclui todas as parcelas que batem com a descrição e o cartão
+                            supabase.table("lancamentos").delete().eq("user_id", u_id).eq("descricao", row['descricao']).eq("cartao_nome", row['cartao_nome']).execute()
+                            st.success(f"Compra '{row['descricao']}' removida!")
+                            st.rerun()
+                        st.divider()
 
         with tab3:
             c_a, c_b = st.columns(2)
@@ -182,12 +195,9 @@ else:
                         supabase.table("cartoes").delete().eq("id", c['id']).execute()
                         st.rerun()
 
-    # --- NOVA ABA: GERENCIAR LANÇAMENTOS (DINHEIRO/PIX/DÉBITO) ---
+    # --- ABA: GERENCIAR LANÇAMENTOS (OUTROS) ---
     elif menu == "Gerenciar Lançamentos (Outros)":
         st.header("⚙️ Gerenciar Lançamentos (Outros)")
-        st.info("Aqui você pode excluir lançamentos que não são de cartão de crédito.")
-        
-        # Busca apenas lançamentos onde cartao_nome é nulo
         res_o = supabase.table("lancamentos").select("*").eq("user_id", u_id).is_("cartao_nome", "null").execute()
         
         if res_o.data:
@@ -203,7 +213,6 @@ else:
                     col3.write(format_real(row['valor']))
                     if col4.button("Excluir", key=f"del_lan_{row['id']}"):
                         supabase.table("lancamentos").delete().eq("id", row['id']).execute()
-                        st.success("Lançamento excluído!")
                         st.rerun()
                     st.divider()
         else:
