@@ -72,7 +72,7 @@ def tela_login():
         with aba_in:
             email = st.text_input("E-mail")
             senha = st.text_input("Senha", type="password")
-            if st.button("Acessar Painel"):
+            if st.button("Aceder Painel"):
                 try:
                     res = supabase.auth.sign_in_with_password({"email": email, "password": senha})
                     st.session_state.user = res.user
@@ -156,20 +156,15 @@ else:
                 df_mes['Data'] = df_mes['data'].dt.strftime('%d/%m/%Y')
                 df_mes['Valor R$'] = df_mes['valor'].apply(format_real)
                 df_mes['Origem'] = df_mes['cartao_nome'].fillna("Dinheiro/Pix")
-                st.dataframe(df_mes[['Data', 'descricao', 'Origem', 'tipo', 'Valor R$']], use_container_width=True)
+                st.dataframe(df_mes[['Data', 'descricao', 'Origem', 'tipo', 'Valor R$']], use_container_width=True, hide_index=True)
 
             with aba_periodo:
                 st.markdown("### Comparativo Mensal (Receitas x Despesas)")
-                # Agrupar por MesAno e Tipo
                 df_periodo = df.groupby(['MesAno', 'tipo'])['valor'].sum().unstack(fill_value=0)
-                
-                # Garantir que as colunas existam
                 if 'Receita' not in df_periodo.columns: df_periodo['Receita'] = 0
                 if 'Despesa' not in df_periodo.columns: df_periodo['Despesa'] = 0
-                
                 df_periodo['Resultado'] = df_periodo['Receita'] - df_periodo['Despesa']
                 
-                # Formatação para exibição
                 df_view = df_periodo.copy()
                 df_view['Receita'] = df_view['Receita'].apply(format_real)
                 df_view['Despesa'] = df_view['Despesa'].apply(format_real)
@@ -197,7 +192,7 @@ else:
                             df_c = df_f[df_f['cartao_nome'] == cartao].copy()
                             df_c['Parc.'] = df_c['parcela_atual'].astype(str) + "/" + df_c['total_parcelas'].astype(str)
                             df_c['Valor'] = df_c['valor'].apply(format_real)
-                            st.table(df_c[['descricao', 'Parc.', 'Valor']])
+                            st.dataframe(df_c[['descricao', 'Parc.', 'Valor']], use_container_width=True, hide_index=True)
                             soma_cartao = df_c['valor'].sum()
                             st.write(f"Subtotal {cartao}: **{format_real(soma_cartao)}**")
                             total_geral_faturas += soma_cartao
