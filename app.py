@@ -138,41 +138,53 @@ else:
             else: st.info("Sem dados de cartões.")
 
         with tab2:
+            st.subheader("📋 Status de Compras Parceladas")
             if not df_all.empty:
-                resumo = df_all.groupby(['descricao', 'cartao_nome']).agg({'valor': 'sum'}).reset_index()
-                for idx, row in resumo.iterrows():
-                    c1, c2, c3 = st.columns([2,1,1])
-                    c1.write(f"**{row['descricao']}** ({row['cartao_nome']})")
-                    c2.write(format_real(row['valor']))
-                    if c3.button("Excluir Compra", key=f"btn_del_compra_{idx}"):
-                        supabase.table("lancamentos").delete().eq("user_id", u_id).eq("descricao", row['descricao']).eq("cartao_nome", row['cartao_nome']).execute()
-                        st.rerun()
+                df_all['data'] = pd.to_datetime(df_all['data'])
+                # Agrupamos para identificar cada compra única
+                grupos = df_all.groupby(['descricao', 'cartao_nome'])
+                
+                for (desc, cartao), df_compra in grupos:
+                    with st.container():
+                        c1, c2, c3, c4 = st.columns([1.5, 1, 1, 0.5])
+                        
+                        # Data da última parcela
+                        data_ultima = df_compra['data'].max().strftime('%d/%m/%Y')
+                        # Saldo restante (hoje em diante)
+                        saldo_restante = df_compra[df_compra['data'].dt.date >= date.today()]['valor'].sum()
+                        # Valor total original da compra
+                        valor_total_orig = df_compra['valor'].sum()
+
+                        c1.write(f"**{desc}** ({cartao})")
+                        c2.write(f"Última parc: **{data_ultima}**")
+                        c3.write(f"Saldo devedor: **{format_real(saldo_restante)}**")
+                        
+                        if c4.button("Excluir", key=f"del_c_{desc}_{cartao}"):
+                            supabase.table("lancamentos").delete().eq("user_id", u_id).eq("descricao", desc).eq("cartao_nome", cartao).execute()
+                            st.rerun()
+                        st.divider()
+            else:
+                st.info("Sem compras parceladas.")
 
         with tab3:
             st.subheader("Gerenciar Cartões")
             col_nc, col_lc = st.columns([1, 1])
-            
             with col_nc:
                 st.write("**Novo Cartão**")
-                n_c = st.text_input("Nome do Cartão (ex: Nubank)")
+                n_c = st.text_input("Nome do Cartão")
                 if st.button("Adicionar"):
                     if n_c:
                         supabase.table("cartoes").insert({"user_id": u_id, "nome_cartao": n_c}).execute()
                         st.rerun()
-            
             with col_lc:
                 st.write("**Cartões Cadastrados**")
                 res_c = supabase.table("cartoes").select("*").eq("user_id", u_id).execute()
                 for c in res_c.data:
                     c1, c2 = st.columns([3, 1])
                     c1.write(f"💳 {c['nome_cartao']}")
-                    # Botão para deletar cartão e suas compras
                     if c2.button("❌", key=f"del_card_{c['id']}"):
-                        # 1. Deletar compras associadas
                         supabase.table("lancamentos").delete().eq("user_id", u_id).eq("cartao_nome", c['nome_cartao']).execute()
-                        # 2. Deletar o cartão
                         supabase.table("cartoes").delete().eq("id", c['id']).execute()
-                        st.success(f"Cartão {c['nome_cartao']} e suas compras foram excluídos.")
                         st.rerun()
 
     # --- ABA: GERENCIAR OUTROS ---
