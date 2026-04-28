@@ -27,7 +27,7 @@ if "user_email" not in st.session_state: st.session_state.user_email = ""
 def main():
     # 1. SET_PAGE_CONFIG
     st.set_page_config(
-        page_title="ContabilApp Pro",
+        page_title="ContabilApp V2",
         layout="wide",
         page_icon=LINK_LOGO # Usando o link direto aqui também
     )
