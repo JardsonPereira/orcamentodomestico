@@ -7,7 +7,7 @@ import calendar
 # --- CONFIGURAÇÃO DA LOGO ---
 # Substitua pelo link direto da sua imagem (PNG ou JPG)
 # Dica: Use uma imagem quadrada para não cortar no celular.
-LOGO_URL = "https://sua-logo-aqui.png" 
+LOGO_URL = "https://gemini.google.com/app/6ee3948b9b1aae33?hl=pt-BR" 
 
 # --- CONEXÃO SEGURA ---
 try:
