@@ -3,7 +3,6 @@ from supabase import create_client, Client
 import pandas as pd
 from datetime import date
 from dateutil.relativedelta import relativedelta
-import re
 
 # --- CONFIGURAÇÃO SUPABASE ---
 try:
@@ -11,7 +10,7 @@ try:
     KEY = st.secrets["SUPABASE_KEY"]
     supabase: Client = create_client(URL, KEY)
 except Exception:
-    st.error("Erro: Credenciais do Supabase não configuradas nos Secrets do Streamlit.")
+    st.error("Erro: Credenciais do Supabase não configuradas nos Secrets.")
     st.stop()
 
 st.set_page_config(page_title="Gestão Financeira", layout="wide", page_icon="💰")
@@ -25,35 +24,30 @@ def format_real(valor):
 # --- AUTENTICAÇÃO ---
 def tela_login():
     st.title("💰 Orçamento Doméstico")
-    col_l, _ = st.columns([1, 1])
-    with col_l:
-        aba_in, aba_up = st.tabs(["Entrar", "Cadastrar"])
-        with aba_in:
-            email = st.text_input("E-mail")
-            senha = st.text_input("Senha", type="password", key="login_pass")
-            if st.button("Aceder"):
-                try:
-                    res = supabase.auth.sign_in_with_password({"email": email, "password": senha})
-                    st.session_state.user = res.user
-                    st.rerun()
-                except:
-                    st.error("Utilizador ou senha inválidos.")
-        with aba_up:
-            novo_email = st.text_input("Novo E-mail")
-            nova_senha = st.text_input("Nova Senha", type="password", key="reg_pass")
-            if st.button("Criar Conta"):
-                try:
-                    res = supabase.auth.sign_up({"email": novo_email, "password": nova_senha})
-                    if res.user:
-                        st.success("Conta criada! Pode fazer login.")
-                except Exception as e:
-                    st.error(f"Erro: {e}")
+    aba_in, aba_up = st.tabs(["Entrar", "Cadastrar"])
+    with aba_in:
+        email = st.text_input("E-mail")
+        senha = st.text_input("Senha", type="password")
+        if st.button("Aceder"):
+            try:
+                res = supabase.auth.sign_in_with_password({"email": email, "password": senha})
+                st.session_state.user = res.user
+                st.rerun()
+            except: st.error("Login inválido.")
+    with aba_up:
+        n_email = st.text_input("Novo E-mail")
+        n_senha = st.text_input("Nova Senha", type="password")
+        if st.button("Criar Conta"):
+            try:
+                supabase.auth.sign_up({"email": n_email, "password": n_senha})
+                st.success("Conta criada!")
+            except Exception as e: st.error(f"Erro: {e}")
 
 if st.session_state.user is None:
     tela_login()
 else:
     u_id = st.session_state.user.id
-    st.sidebar.title("💰 Menu Financeiro")
+    st.sidebar.title("💰 Menu")
     menu = st.sidebar.radio("Navegação", ["Dashboard Mensal", "Novo Lançamento", "Cartões de Crédito", "Gerenciar Lançamentos (Outros)"])
     
     if st.sidebar.button("Sair"):
@@ -63,154 +57,120 @@ else:
 
     # --- ABA: NOVO LANÇAMENTO ---
     if menu == "Novo Lançamento":
-        st.header("📝 Registar Movimentação")
+        st.header("📝 Novo Lançamento")
         with st.form("form_lan", clear_on_submit=True):
             tipo = st.selectbox("Tipo", ["Receita", "Despesa"])
             desc = st.text_input("Descrição")
-            valor_total = st.number_input("Valor Total (R$)", min_value=0.0, format="%.2f", step=0.01)
-            data_base = st.date_input("Data de Início/Compra", date.today())
-            
+            valor_total = st.number_input("Valor Total (R$)", min_value=0.0, format="%.2f")
+            data_base = st.date_input("Data", date.today())
             res_c = supabase.table("cartoes").select("nome_cartao").eq("user_id", u_id).execute()
-            lista_cartoes = [c['nome_cartao'] for c in res_c.data]
+            lista_c = [c['nome_cartao'] for c in res_c.data]
+            cartao_sel = st.selectbox("Pagamento", ["Dinheiro/Pix/Débito"] + lista_c)
+            parcelas = st.number_input("Parcelas", min_value=1, value=1)
             
-            cartao_sel = st.selectbox("Forma de Pagamento", ["Dinheiro/Pix/Débito"] + lista_cartoes)
-            parcelas = st.number_input("Número de Parcelas", min_value=1, value=1)
-            
-            if st.form_submit_button("Guardar Lançamento"):
-                if not desc or valor_total <= 0:
-                    st.warning("Preencha a descrição e o valor.")
-                else:
-                    dados = []
-                    valor_parc = valor_total / parcelas
-                    for i in range(parcelas):
-                        dados.append({
-                            "user_id": u_id, "tipo": tipo,
-                            "descricao": desc,
-                            "valor": round(float(valor_parc), 2),
-                            "data": str(data_base + relativedelta(months=i)),
-                            "parcela_atual": i + 1, "total_parcelas": parcelas,
-                            "cartao_nome": cartao_sel if cartao_sel != "Dinheiro/Pix/Débito" else None
-                        })
-                    supabase.table("lancamentos").insert(dados).execute()
-                    st.success(f"Lançamento guardado!")
+            if st.form_submit_button("Salvar"):
+                v_parc = valor_total / parcelas
+                dados = []
+                for i in range(parcelas):
+                    dados.append({
+                        "user_id": u_id, "tipo": tipo, "descricao": desc,
+                        "valor": round(float(v_parc), 2),
+                        "data": str(data_base + relativedelta(months=i)),
+                        "parcela_atual": i + 1, "total_parcelas": parcelas,
+                        "cartao_nome": cartao_sel if cartao_sel != "Dinheiro/Pix/Débito" else None
+                    })
+                supabase.table("lancamentos").insert(dados).execute()
+                st.success("Salvo com sucesso!")
 
-    # --- ABA: DASHBOARD MENSAL (CORRIGIDA) ---
+    # --- ABA: DASHBOARD MENSAL (LÓGICA REFEITA) ---
     elif menu == "Dashboard Mensal":
         st.header("📊 Resumo Mensal")
         res = supabase.table("lancamentos").select("*").eq("user_id", u_id).execute()
+        
         if res.data:
             df = pd.DataFrame(res.data)
             df['data'] = pd.to_datetime(df['data'])
             df['MesAno'] = df['data'].dt.strftime('%m/%Y')
-            mes_sel = st.selectbox("Selecione o Mês", sorted(df['MesAno'].unique(), reverse=True))
             
+            # Filtro de Mês
+            meses = sorted(df['MesAno'].unique(), reverse=True)
+            mes_sel = st.selectbox("Mês", meses)
+            
+            # Filtragem dos dados do mês
             df_mes = df[df['MesAno'] == mes_sel].copy()
             
-            # Correção: O drop_duplicates agora considera a ID única ou a parcela atual 
-            # para não sumir com os lançamentos de cartão que têm o mesmo valor
-            df_mes = df_mes.drop_duplicates(subset=['id']) 
-            
+            # MÉTRICAS
             c1, c2, c3 = st.columns(3)
-            rec = df_mes[df_mes['tipo'] == 'Receita']['valor'].sum()
-            des = df_mes[df_mes['tipo'] == 'Despesa']['valor'].sum()
-            c1.metric("Receitas", format_real(rec))
-            c2.metric("Despesas", format_real(des))
-            c3.metric("Saldo", format_real(rec - des))
+            receitas = df_mes[df_mes['tipo'] == 'Receita']['valor'].sum()
+            despesas = df_mes[df_mes['tipo'] == 'Despesa']['valor'].sum()
+            c1.metric("Receitas", format_real(receitas))
+            c2.metric("Despesas", format_real(despesas))
+            c3.metric("Saldo", format_real(receitas - despesas))
             
             st.divider()
-            df_mes['Valor R$'] = df_mes['valor'].apply(format_real)
+            
+            # PREPARAÇÃO DA TABELA
             df_mes['Data'] = df_mes['data'].dt.strftime('%d/%m/%Y')
+            df_mes['Valor R$'] = df_mes['valor'].apply(format_real)
+            df_mes['Pagamento'] = df_mes['cartao_nome'].fillna("Dinheiro/Pix")
             
-            # Adicionamos uma coluna de info extra apenas para o Dashboard saber se é cartão
-            df_mes['Origem'] = df_mes['cartao_nome'].fillna("Dinheiro/Pix")
-            
-            st.dataframe(df_mes[['Data', 'descricao', 'Origem', 'tipo', 'Valor R$']], use_container_width=True)
+            # Exibição
+            st.subheader("Lista de Lançamentos")
+            st.dataframe(df_mes[['Data', 'descricao', 'Pagamento', 'tipo', 'Valor R$']], use_container_width=True)
         else:
-            st.info("Nenhum lançamento encontrado.")
+            st.info("Nenhum dado encontrado.")
 
     # --- ABA: CARTÕES DE CRÉDITO ---
     elif menu == "Cartões de Crédito":
-        st.header("💳 Gestão de Cartões")
-        tab1, tab2, tab3 = st.tabs(["Fatura do Mês", "Resumo Total de Compras", "Gerenciar Cartões"])
-
+        st.header("💳 Cartões")
+        tab1, tab2, tab3 = st.tabs(["Fatura do Mês", "Resumo Total", "Gerenciar Cartões"])
+        
         res_l = supabase.table("lancamentos").select("*").eq("user_id", u_id).neq("cartao_nome", None).execute()
         df_all = pd.DataFrame(res_l.data) if res_l.data else pd.DataFrame()
         hoje = pd.to_datetime(date.today())
 
         with tab1:
-            st.subheader(f"📅 Fatura de {hoje.strftime('%m/%Y')}")
             if not df_all.empty:
                 df_all['data'] = pd.to_datetime(df_all['data'])
-                df_fatura = df_all[df_all['data'].dt.strftime('%m/%Y') == hoje.strftime('%m/%Y')].copy()
+                mes_atual = hoje.strftime('%m/%Y')
+                df_f = df_all[df_all['data'].dt.strftime('%m/%Y') == mes_atual].copy()
                 
-                if not df_fatura.empty:
-                    for cartao in df_fatura['cartao_nome'].unique():
-                        with st.expander(f"Cartão: {cartao}", expanded=True):
-                            df_c = df_fatura[df_fatura['cartao_nome'] == cartao].copy()
-                            df_c['Parcela'] = df_c['parcela_atual'].astype(str) + "/" + df_c['total_parcelas'].astype(str)
-                            df_c['Valor R$'] = df_c['valor'].apply(format_real)
-                            st.table(df_c[['data', 'descricao', 'Parcela', 'Valor R$']])
-                            total_c = df_c['valor'].sum()
-                            st.write(f"**Total da Fatura {cartao}:** :green[{format_real(total_c)}]")
-                else:
-                    st.info("Sem parcelas para este mês.")
+                for cartao in df_f['cartao_nome'].unique():
+                    with st.expander(f"Fatura: {cartao}"):
+                        df_c = df_f[df_f['cartao_nome'] == cartao].copy()
+                        df_c['Parc.'] = df_c['parcela_atual'].astype(str) + "/" + df_c['total_parcelas'].astype(str)
+                        df_c['Valor'] = df_c['valor'].apply(format_real)
+                        st.table(df_c[['descricao', 'Parc.', 'Valor']])
+                        st.write(f"Total: **{format_real(df_c['valor'].sum())}**")
+            else: st.info("Sem dados de cartões.")
 
         with tab2:
-            st.subheader("📋 Resumo Total de Compras")
             if not df_all.empty:
-                resumo = df_all.groupby(['descricao', 'cartao_nome', 'total_parcelas']).agg({'valor': 'sum'}).reset_index()
-                
-                for index, row in resumo.iterrows():
-                    with st.container():
-                        c1, c2, c3 = st.columns([2, 1, 1])
-                        c1.write(f"**{row['descricao']}** ({row['cartao_nome']})")
-                        c2.write(f"Valor Total: **{format_real(row['valor'])}**")
-                        
-                        if c3.button("Excluir Compra", key=f"del_compra_{index}"):
-                            supabase.table("lancamentos").delete().eq("user_id", u_id).eq("descricao", row['descricao']).eq("cartao_nome", row['cartao_nome']).execute()
-                            st.success(f"Compra removida!")
-                            st.rerun()
-                        st.divider()
-            else:
-                st.info("Sem compras parceladas.")
+                resumo = df_all.groupby(['descricao', 'cartao_nome']).agg({'valor': 'sum'}).reset_index()
+                for idx, row in resumo.iterrows():
+                    c1, c2, c3 = st.columns([2,1,1])
+                    c1.write(f"**{row['descricao']}** ({row['cartao_nome']})")
+                    c2.write(format_real(row['valor']))
+                    if c3.button("Excluir", key=f"btn_del_{idx}"):
+                        supabase.table("lancamentos").delete().eq("user_id", u_id).eq("descricao", row['descricao']).eq("cartao_nome", row['cartao_nome']).execute()
+                        st.rerun()
 
         with tab3:
-            c_a, c_b = st.columns(2)
-            with c_a:
-                st.subheader("Novo Cartão")
-                n_c = st.text_input("Nome (ex: Nubank)")
-                if st.button("Cadastrar"):
-                    supabase.table("cartoes").insert({"user_id": u_id, "nome_cartao": n_c}).execute()
-                    st.rerun()
-            with c_b:
-                st.subheader("Excluir Cartão")
-                res_c = supabase.table("cartoes").select("*").eq("user_id", u_id).execute()
-                for c in res_c.data:
-                    col_x, col_y = st.columns([3, 1])
-                    col_x.write(f"💳 {c['nome_cartao']}")
-                    if col_y.button("❌", key=f"del_card_{c['id']}"):
-                        supabase.table("cartoes").delete().eq("id", c['id']).execute()
-                        st.rerun()
+            st.subheader("Novo Cartão")
+            n_c = st.text_input("Nome do Cartão")
+            if st.button("Adicionar"):
+                supabase.table("cartoes").insert({"user_id": u_id, "nome_cartao": n_c}).execute()
+                st.rerun()
 
-    # --- ABA: GERENCIAR LANÇAMENTOS (OUTROS) ---
+    # --- ABA: GERENCIAR OUTROS ---
     elif menu == "Gerenciar Lançamentos (Outros)":
-        st.header("⚙️ Gerenciar Lançamentos (Outros)")
+        st.header("⚙️ Outros Lançamentos")
         res_o = supabase.table("lancamentos").select("*").eq("user_id", u_id).is_("cartao_nome", "null").execute()
-        
         if res_o.data:
-            df_o = pd.DataFrame(res_o.data)
-            df_o['data'] = pd.to_datetime(df_o['data'])
-            df_o = df_o.sort_values(by='data', ascending=False)
-            
-            for index, row in df_o.iterrows():
-                with st.container():
-                    col1, col2, col3, col4 = st.columns([1, 2, 1, 1])
-                    col1.write(row['data'].strftime('%d/%m/%Y'))
-                    col2.write(row['descricao'])
-                    col3.write(format_real(row['valor']))
-                    if col4.button("Excluir", key=f"del_lan_{row['id']}"):
-                        supabase.table("lancamentos").delete().eq("id", row['id']).execute()
-                        st.rerun()
-                    st.divider()
-        else:
-            st.write("Nenhum lançamento (não cartão) encontrado.")
+            for item in res_o.data:
+                c1, c2, c3 = st.columns([2,1,1])
+                c1.write(f"{item['data']} - {item['descricao']}")
+                c2.write(format_real(item['valor']))
+                if c3.button("Excluir", key=f"del_o_{item['id']}"):
+                    supabase.table("lancamentos").delete().eq("id", item['id']).execute()
+                    st.rerun()
