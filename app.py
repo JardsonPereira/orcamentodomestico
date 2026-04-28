@@ -26,7 +26,6 @@ st.markdown("""
         min-height: 100vh;
     }
 
-    /* Container de Métricas (Glass Effect) */
     div[data-testid="metric-container"] {
         background: rgba(255, 255, 255, 0.6);
         backdrop-filter: blur(10px);
@@ -36,7 +35,6 @@ st.markdown("""
         box-shadow: 0 8px 32px rgba(0, 0, 0, 0.05);
     }
 
-    /* Botões */
     .stButton>button {
         border-radius: 12px;
         background: linear-gradient(90deg, #667eea 0%, #764ba2 100%);
@@ -51,7 +49,6 @@ st.markdown("""
         box-shadow: 0 10px 20px rgba(118, 75, 162, 0.3);
     }
 
-    /* Tabelas */
     .stDataFrame, .stTable {
         background: white;
         border-radius: 15px;
@@ -103,9 +100,8 @@ else:
         st.session_state.user = None
         st.rerun()
 
-    # --- ABA: NOVO LANÇAMENTO ---
     if menu == "Novo Lançamento":
-        st.markdown("## 📝 Novo Registro")
+        st.header("📝 Novo Registro")
         with st.form("form_lan", clear_on_submit=True):
             tipo = st.selectbox("Tipo", ["Receita", "Despesa"])
             desc = st.text_input("Descrição")
@@ -128,9 +124,8 @@ else:
                     }).execute()
                 st.success("Lançado!")
 
-    # --- ABA: DASHBOARD MENSAL ---
     elif menu == "Dashboard Mensal":
-        st.markdown("## 📊 Dashboard")
+        st.header("📊 Dashboard")
         res = supabase.table("lancamentos").select("*").eq("user_id", u_id).execute()
         if res.data:
             df = pd.DataFrame(res.data)
@@ -152,9 +147,8 @@ else:
             df_mes['Origem'] = df_mes['cartao_nome'].fillna("Dinheiro/Pix")
             st.dataframe(df_mes[['Data', 'descricao', 'Origem', 'tipo', 'Valor R$']], use_container_width=True)
 
-    # --- ABA: CARTÕES DE CRÉDITO ---
     elif menu == "Cartões de Crédito":
-        st.markdown("## 💳 Gestão de Cartões")
+        st.header("💳 Gestão de Cartões")
         tab1, tab2, tab3 = st.tabs(["Fatura Atual", "Resumo de Compras", "Configurações"])
         
         res_l = supabase.table("lancamentos").select("*").eq("user_id", u_id).neq("cartao_nome", None).execute()
@@ -165,13 +159,23 @@ else:
             if not df_all.empty:
                 df_all['data'] = pd.to_datetime(df_all['data'])
                 df_f = df_all[df_all['data'].dt.strftime('%m/%Y') == hoje.strftime('%m/%Y')].copy()
-                for cartao in df_f['cartao_nome'].unique():
-                    with st.expander(f"Fatura {cartao}", expanded=True):
-                        df_c = df_f[df_f['cartao_nome'] == cartao].copy()
-                        df_c['Parc.'] = df_c['parcela_atual'].astype(str) + "/" + df_c['total_parcelas'].astype(str)
-                        df_c['Valor'] = df_c['valor'].apply(format_real)
-                        st.table(df_c[['descricao', 'Parc.', 'Valor']])
-                        st.write(f"Total: **{format_real(df_c['valor'].sum())}**")
+                
+                total_geral_faturas = 0
+                if not df_f.empty:
+                    for cartao in df_f['cartao_nome'].unique():
+                        with st.expander(f"Fatura {cartao}", expanded=True):
+                            df_c = df_f[df_f['cartao_nome'] == cartao].copy()
+                            df_c['Parc.'] = df_c['parcela_atual'].astype(str) + "/" + df_c['total_parcelas'].astype(str)
+                            df_c['Valor'] = df_c['valor'].apply(format_real)
+                            st.table(df_c[['descricao', 'Parc.', 'Valor']])
+                            soma_cartao = df_c['valor'].sum()
+                            st.write(f"Subtotal {cartao}: **{format_real(soma_cartao)}**")
+                            total_geral_faturas += soma_cartao
+                    
+                    st.divider()
+                    st.markdown(f"### Total Geral de Faturas: <span style='color: #764ba2;'>{format_real(total_geral_faturas)}</span>", unsafe_allow_html=True)
+                else: st.info("Sem parcelas para este mês.")
+            else: st.info("Sem dados de cartões.")
 
         with tab2:
             if not df_all.empty:
@@ -210,9 +214,8 @@ else:
                         supabase.table("cartoes").delete().eq("id", c['id']).execute()
                         st.rerun()
 
-    # --- ABA: GERENCIAR OUTROS ---
     elif menu == "Gerenciar Outros":
-        st.markdown("## ⚙️ Movimentações Avulsas")
+        st.header("⚙️ Movimentações Avulsas")
         res_o = supabase.table("lancamentos").select("*").eq("user_id", u_id).is_("cartao_nome", "null").execute()
         if res_o.data:
             for item in res_o.data:
