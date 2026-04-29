@@ -128,7 +128,14 @@ else:
                 df_view = df_view.sort_values(by='data', ascending=True)
                 st.dataframe(df_view[['Data', 'descricao', 'Tipo', 'Origem', 'Valor']], use_container_width=True, hide_index=True)
 
-    # --- CARTÕES DE CRÉDITO (EDIÇÃO/EXCLUSÃO EM MASSA) ---
+            with aba_periodo:
+                df_periodo = df.groupby(['MesAno', 'tipo'])['valor'].sum().unstack(fill_value=0)
+                for col in ['Receita', 'Despesa']:
+                    if col not in df_periodo.columns: df_periodo[col] = 0
+                df_periodo['Resultado'] = df_periodo['Receita'] - df_periodo['Despesa']
+                st.dataframe(df_periodo.style.format(format_real), use_container_width=True)
+
+    # --- CARTÕES DE CRÉDITO ---
     elif menu == "Cartões de Crédito":
         st.header("💳 Gestão de Cartões")
         tab1, tab2, tab3 = st.tabs(["Fatura Atual", "Resumo de Compras", "Configurações"])
@@ -141,12 +148,20 @@ else:
                 df_all['data'] = pd.to_datetime(df_all['data'])
                 df_f = df_all[df_all['data'].dt.strftime('%m/%Y') == hoje.strftime('%m/%Y')].copy()
                 if not df_f.empty:
+                    total_geral_faturas = 0
                     for cartao in df_f['cartao_nome'].unique():
                         with st.expander(f"Fatura {cartao}", expanded=True):
                             df_c = df_f[df_f['cartao_nome'] == cartao].copy()
+                            subtotal = df_c['valor'].sum()
+                            total_geral_faturas += subtotal
+                            
                             df_c['Parc.'] = df_c['parcela_atual'].astype(str) + "/" + df_c['total_parcelas'].astype(str)
                             df_c['Valor'] = df_c['valor'].apply(format_real)
                             st.dataframe(df_c[['descricao', 'Parc.', 'Valor']], use_container_width=True, hide_index=True)
+                            st.markdown(f"**Subtotal {cartao}: {format_real(subtotal)}**")
+                    
+                    st.divider()
+                    st.markdown(f"### 🧾 Soma Total das Faturas: {format_real(total_geral_faturas)}")
                 else: st.info("Sem faturas para este mês.")
 
         with tab2:
@@ -196,7 +211,7 @@ else:
                         supabase.table("lancamentos").delete().eq("user_id", u_id).eq("cartao_nome", c['nome_cartao']).execute()
                         supabase.table("cartoes").delete().eq("id", c['id']).execute(); st.rerun()
 
-    # --- GERENCIAR OUTROS (POR MÊS E COM EDIÇÃO) ---
+    # --- GERENCIAR OUTROS ---
     elif menu == "Gerenciar Outros":
         st.header("⚙️ Gerenciar Lançamentos Avulsos")
         res_o = supabase.table("lancamentos").select("*").eq("user_id", u_id).is_("cartao_nome", "null").execute()
