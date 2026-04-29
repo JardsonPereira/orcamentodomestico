@@ -135,22 +135,32 @@ else:
                 df_periodo['Resultado'] = df_periodo['Receita'] - df_periodo['Despesa']
                 st.dataframe(df_periodo.style.format(format_real), use_container_width=True)
 
-    # --- CARTÕES DE CRÉDITO ---
+    # --- CARTÕES DE CRÉDITO (COM CONSULTA DE FATURAS FUTURAS) ---
     elif menu == "Cartões de Crédito":
         st.header("💳 Gestão de Cartões")
-        tab1, tab2, tab3 = st.tabs(["Fatura Atual", "Resumo de Compras", "Configurações"])
+        tab1, tab2, tab3 = st.tabs(["Faturas (Mês a Mês)", "Resumo de Compras", "Configurações"])
         res_l = supabase.table("lancamentos").select("*").eq("user_id", u_id).neq("cartao_nome", None).execute()
         df_all = pd.DataFrame(res_l.data) if res_l.data else pd.DataFrame()
-        hoje = pd.to_datetime(date.today())
 
         with tab1:
             if not df_all.empty:
                 df_all['data'] = pd.to_datetime(df_all['data'])
-                df_f = df_all[df_all['data'].dt.strftime('%m/%Y') == hoje.strftime('%m/%Y')].copy()
+                df_all['MesAno'] = df_all['data'].dt.strftime('%m/%Y')
+                
+                # Gera lista de meses para consulta de faturas futuras
+                meses_fatura = sorted(df_all['MesAno'].unique(), key=lambda x: pd.to_datetime(x, format='%m/%Y'), reverse=False)
+                hoje_str = date.today().strftime('%m/%Y')
+                idx_h = meses_fatura.index(hoje_str) if hoje_str in meses_fatura else 0
+                
+                col_f1, col_f2 = st.columns([1, 2])
+                mes_f_sel = col_f1.selectbox("Consultar Fatura de:", meses_fatura, index=idx_h)
+                
+                df_f = df_all[df_all['MesAno'] == mes_f_sel].copy()
+                
                 if not df_f.empty:
                     total_geral_faturas = 0
                     for cartao in df_f['cartao_nome'].unique():
-                        with st.expander(f"Fatura {cartao}", expanded=True):
+                        with st.expander(f"Fatura {cartao} - {mes_f_sel}", expanded=True):
                             df_c = df_f[df_f['cartao_nome'] == cartao].copy()
                             subtotal = df_c['valor'].sum()
                             total_geral_faturas += subtotal
@@ -161,8 +171,9 @@ else:
                             st.markdown(f"**Subtotal {cartao}: {format_real(subtotal)}**")
                     
                     st.divider()
-                    st.markdown(f"### 🧾 Soma Total das Faturas: {format_real(total_geral_faturas)}")
-                else: st.info("Sem faturas para este mês.")
+                    st.markdown(f"### 🧾 Soma Total das Faturas em {mes_f_sel}: {format_real(total_geral_faturas)}")
+                else: st.info(f"Sem faturas para {mes_f_sel}.")
+            else: st.info("Sem dados de cartões.")
 
         with tab2:
             if not df_all.empty:
@@ -219,7 +230,7 @@ else:
             df_o = pd.DataFrame(res_o.data)
             df_o['data'] = pd.to_datetime(df_o['data'])
             df_o['MesAno'] = df_o['data'].dt.strftime('%m/%Y')
-            meses_o = sorted(df_o['MesAno'].unique(), reverse=True)
+            meses_o = sorted(df_o['MesAno'].unique(), key=lambda x: pd.to_datetime(x, format='%m/%Y'), reverse=True)
             mes_sel_o = st.selectbox("Mês para gerenciar", meses_o, key="mes_o_sel")
             
             df_f_o = df_o[df_o['MesAno'] == mes_sel_o].sort_values(by='data', ascending=False)
