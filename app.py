@@ -13,16 +13,49 @@ except Exception:
     st.error("Erro: Credenciais do Supabase não configuradas.")
     st.stop()
 
-# --- CONFIGURAÇÃO VISUAL ---
+# --- CONFIGURAÇÃO VISUAL (AJUSTADA PARA NÃO CORTAR) ---
 st.set_page_config(page_title="Pocket Finance", layout="wide", page_icon="🍃")
 
 st.markdown("""
     <style>
     @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;600&display=swap');
-    html, body, [class*="css"] { font-family: 'Inter', sans-serif; background: linear-gradient(135deg, #f5f7fa 0%, #c3cfe2 100%); min-height: 100vh; }
-    div[data-testid="metric-container"] { background: rgba(255, 255, 255, 0.6); backdrop-filter: blur(10px); border-radius: 20px; padding: 20px; border: 1px solid rgba(255, 255, 255, 0.4); box-shadow: 0 8px 32px rgba(0, 0, 0, 0.05); }
-    .stButton>button { border-radius: 12px; background: linear-gradient(90deg, #667eea 0%, #764ba2 100%); color: white; font-weight: 600; width: 100%; }
-    .stDataFrame, .stTable { background: white; border-radius: 15px; overflow: hidden; }
+    
+    /* Ajuste para ocupar a tela cheia sem cortes */
+    .block-container {
+        padding-top: 2rem;
+        padding-bottom: 2rem;
+        padding-left: 3rem;
+        padding-right: 3rem;
+    }
+    
+    html, body, [class*="css"] { 
+        font-family: 'Inter', sans-serif; 
+        background: linear-gradient(135deg, #f5f7fa 0%, #c3cfe2 100%); 
+        min-height: 100vh; 
+    }
+    
+    div[data-testid="metric-container"] { 
+        background: rgba(255, 255, 255, 0.6); 
+        backdrop-filter: blur(10px); 
+        border-radius: 20px; 
+        padding: 20px; 
+        border: 1px solid rgba(255, 255, 255, 0.4); 
+        box-shadow: 0 8px 32px rgba(0, 0, 0, 0.05); 
+    }
+    
+    .stButton>button { 
+        border-radius: 12px; 
+        background: linear-gradient(90deg, #667eea 0%, #764ba2 100%); 
+        color: white; 
+        font-weight: 600; 
+        width: 100%; 
+    }
+    
+    .stDataFrame, .stTable { 
+        background: white; 
+        border-radius: 15px; 
+        overflow: hidden; 
+    }
     </style>
     """, unsafe_allow_html=True)
 
@@ -123,7 +156,6 @@ else:
             df = pd.DataFrame(res.data)
             if 'categoria' not in df.columns: df['categoria'] = "Outros"
             df['categoria'] = df['categoria'].fillna("Outros")
-
             df['data'] = pd.to_datetime(df['data'])
             df['MesAno'] = df['data'].dt.strftime('%m/%Y')
             
@@ -158,6 +190,13 @@ else:
                         cat_chart = df_gastos.groupby('categoria')['valor'].sum()
                         st.bar_chart(cat_chart)
                     else: st.info("Sem despesas para o gráfico.")
+
+            with aba_periodo:
+                df_periodo = df.groupby(['MesAno', 'tipo'])['valor'].sum().unstack(fill_value=0)
+                for col in ['Receita', 'Despesa']:
+                    if col not in df_periodo.columns: df_periodo[col] = 0
+                df_periodo['Resultado'] = df_periodo['Receita'] - df_periodo['Despesa']
+                st.dataframe(df_periodo.style.format(format_real), use_container_width=True)
 
     # --- CARTÕES DE CRÉDITO ---
     elif menu == "Cartões de Crédito":
@@ -205,6 +244,7 @@ else:
                         c3.write(f"Início: {pd.to_datetime(d_inicio).strftime('%d/%m/%Y')}")
                         
                         with c4.popover("📝"):
+                            st.write("**Editar Compra Parcelada**")
                             n_desc = st.text_input("Descrição", value=desc, key=f"ed_c_d_{unique_id}")
                             idx_cat_c = CATEGORIAS_DESPESA.index(cat_atual) if cat_atual in CATEGORIAS_DESPESA else 0
                             n_cat = st.selectbox("Categoria", CATEGORIAS_DESPESA, index=idx_cat_c, key=f"ed_c_cat_{unique_id}")
