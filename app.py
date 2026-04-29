@@ -13,47 +13,16 @@ except Exception:
     st.error("Erro: Credenciais do Supabase não configuradas.")
     st.stop()
 
-# --- CONFIGURAÇÃO VISUAL: CLEAN GLASSMORPHISM ---
+# --- CONFIGURAÇÃO VISUAL ---
 st.set_page_config(page_title="Pocket Finance", layout="wide", page_icon="🍃")
 
 st.markdown("""
     <style>
     @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;600&display=swap');
-    
-    html, body, [class*="css"] {
-        font-family: 'Inter', sans-serif;
-        background: linear-gradient(135deg, #f5f7fa 0%, #c3cfe2 100%);
-        min-height: 100vh;
-    }
-
-    div[data-testid="metric-container"] {
-        background: rgba(255, 255, 255, 0.6);
-        backdrop-filter: blur(10px);
-        border-radius: 20px;
-        padding: 20px;
-        border: 1px solid rgba(255, 255, 255, 0.4);
-        box-shadow: 0 8px 32px rgba(0, 0, 0, 0.05);
-    }
-
-    .stButton>button {
-        border-radius: 12px;
-        background: linear-gradient(90deg, #667eea 0%, #764ba2 100%);
-        color: white;
-        border: none;
-        padding: 10px 24px;
-        font-weight: 600;
-        transition: 0.3s;
-    }
-    .stButton>button:hover {
-        transform: scale(1.02);
-        box-shadow: 0 10px 20px rgba(118, 75, 162, 0.3);
-    }
-
-    .stDataFrame, .stTable {
-        background: white;
-        border-radius: 15px;
-        overflow: hidden;
-    }
+    html, body, [class*="css"] { font-family: 'Inter', sans-serif; background: linear-gradient(135deg, #f5f7fa 0%, #c3cfe2 100%); min-height: 100vh; }
+    div[data-testid="metric-container"] { background: rgba(255, 255, 255, 0.6); backdrop-filter: blur(10px); border-radius: 20px; padding: 20px; border: 1px solid rgba(255, 255, 255, 0.4); box-shadow: 0 8px 32px rgba(0, 0, 0, 0.05); }
+    .stButton>button { border-radius: 12px; background: linear-gradient(90deg, #667eea 0%, #764ba2 100%); color: white; font-weight: 600; }
+    .stDataFrame, .stTable { background: white; border-radius: 15px; overflow: hidden; }
     </style>
     """, unsafe_allow_html=True)
 
@@ -125,7 +94,7 @@ else:
                     }).execute()
                 st.success("Lançado!")
 
-    # --- DASHBOARD MENSAL (CORRIGIDO PARA RESPEITAR O MÊS DE LANÇAMENTO) ---
+    # --- DASHBOARD MENSAL ---
     elif menu == "Dashboard Mensal":
         st.header("📊 Dashboard")
         res = supabase.table("lancamentos").select("*").eq("user_id", u_id).execute()
@@ -140,11 +109,11 @@ else:
                 meses_disponiveis = sorted(df['MesAno'].unique(), reverse=True)
                 hoje_str = date.today().strftime('%m/%Y')
                 idx_padrao = meses_disponiveis.index(hoje_str) if hoje_str in meses_disponiveis else 0
-
                 mes_sel = st.selectbox("Selecione o Mês", meses_disponiveis, index=idx_padrao)
-                # Filtra TUDO (Cartão e Avulso) pelo mês selecionado
+                
                 df_mes = df[df['MesAno'] == mes_sel].copy()
                 
+                # Métricas Principais
                 c1, c2, c3 = st.columns(3)
                 rec = df_mes[df_mes['tipo'] == 'Receita']['valor'].sum()
                 des = df_mes[df_mes['tipo'] == 'Despesa']['valor'].sum()
@@ -152,14 +121,27 @@ else:
                 c2.metric("Saídas", format_real(des))
                 c3.metric("Saldo", format_real(rec - des))
                 
-                st.markdown("### Extrato Detalhado")
-                df_mes['Data'] = df_mes['data'].dt.strftime('%d/%m/%Y')
-                df_mes['Valor R$'] = df_mes['valor'].apply(format_real)
-                df_mes['Origem'] = df_mes['cartao_nome'].fillna("Dinheiro/Pix/Débito")
-                st.dataframe(df_mes[['Data', 'descricao', 'Origem', 'tipo', 'Valor R$']], use_container_width=True, hide_index=True)
+                st.markdown("### 📋 Movimentações Detalhadas")
+                
+                # Tratamento para exibição na tabela
+                df_view = df_mes.copy()
+                df_view['Data'] = df_view['data'].dt.strftime('%d/%m/%Y')
+                df_view['Valor'] = df_view['valor'].apply(format_real)
+                df_view['Origem'] = df_view['cartao_nome'].fillna("💰 Avulso (Pix/Dinheiro)")
+                
+                # Adicionando ícone ao tipo para facilitar identificação
+                df_view['Tipo'] = df_view['tipo'].apply(lambda x: "🟢 Receita" if x == "Receita" else "🔴 Despesa")
+                
+                # Ordenar por data
+                df_view = df_view.sort_values(by='data', ascending=True)
+                
+                st.dataframe(
+                    df_view[['Data', 'descricao', 'Tipo', 'Origem', 'Valor']], 
+                    use_container_width=True, 
+                    hide_index=True
+                )
 
             with aba_periodo:
-                st.markdown("### Comparativo Mensal")
                 df_periodo = df.groupby(['MesAno', 'tipo'])['valor'].sum().unstack(fill_value=0)
                 if 'Receita' not in df_periodo.columns: df_periodo['Receita'] = 0
                 if 'Despesa' not in df_periodo.columns: df_periodo['Despesa'] = 0
@@ -170,7 +152,6 @@ else:
     elif menu == "Cartões de Crédito":
         st.header("💳 Gestão de Cartões")
         tab1, tab2, tab3 = st.tabs(["Fatura Atual", "Resumo de Compras", "Configurações"])
-        
         res_l = supabase.table("lancamentos").select("*").eq("user_id", u_id).neq("cartao_nome", None).execute()
         df_all = pd.DataFrame(res_l.data) if res_l.data else pd.DataFrame()
         hoje = pd.to_datetime(date.today())
@@ -180,43 +161,29 @@ else:
                 df_all['data'] = pd.to_datetime(df_all['data'])
                 df_f = df_all[df_all['data'].dt.strftime('%m/%Y') == hoje.strftime('%m/%Y')].copy()
                 if not df_f.empty:
-                    total_faturas = 0
                     for cartao in df_f['cartao_nome'].unique():
                         with st.expander(f"Fatura {cartao}", expanded=True):
                             df_c = df_f[df_f['cartao_nome'] == cartao].copy()
                             df_c['Parc.'] = df_c['parcela_atual'].astype(str) + "/" + df_c['total_parcelas'].astype(str)
                             df_c['Valor'] = df_c['valor'].apply(format_real)
                             st.dataframe(df_c[['descricao', 'Parc.', 'Valor']], use_container_width=True, hide_index=True)
-                            soma = df_c['valor'].sum()
-                            st.write(f"Subtotal: **{format_real(soma)}**")
-                            total_faturas += soma
-                    st.divider()
-                    st.markdown(f"### Total Geral: {format_real(total_faturas)}")
                 else: st.info("Sem faturas para este mês.")
-            else: st.info("Sem dados de cartões.")
 
         with tab2:
             if not df_all.empty:
                 df_all['data'] = pd.to_datetime(df_all['data'])
                 grupos = df_all.groupby(['descricao', 'cartao_nome', 'total_parcelas'])
-                
                 for i, ((desc, cartao, total_parc), df_compra) in enumerate(grupos):
-                    valor_total_orig = df_compra['valor'].sum()
-                    saldo_restante = df_compra[df_compra['data'].dt.date >= date.today()]['valor'].sum()
-                    data_inicio = df_compra['data'].min()
                     unique_id = f"{i}_{desc}_{cartao}".replace(" ", "_")
-
                     with st.container():
                         c1, c2, c3, c4, c5, c6 = st.columns([1.5, 1, 1, 1, 0.5, 0.5])
                         c1.markdown(f"**{desc}**<br><small>{cartao} ({total_parc}x)</small>", unsafe_allow_html=True)
-                        c2.write(f"Total: **{format_real(valor_total_orig)}**")
-                        c3.write(f"A pagar: **{format_real(saldo_restante)}**")
-                        c4.write(f"Início: {data_inicio.strftime('%d/%m/%Y')}")
-
+                        c2.write(f"Total: {format_real(df_compra['valor'].sum())}")
+                        c4.write(f"Início: {df_compra['data'].min().strftime('%d/%m/%Y')}")
+                        
                         with c5.popover("📝"):
-                            st.write("Editar Compra")
                             nova_desc = st.text_input("Descrição", value=desc, key=f"ed_desc_{unique_id}")
-                            novo_val = st.number_input("Valor Total", value=float(valor_total_orig), key=f"ed_val_{unique_id}")
+                            novo_val = st.number_input("Valor Total", value=float(df_compra['valor'].sum()), key=f"ed_val_{unique_id}")
                             if st.button("Salvar", key=f"btn_save_{unique_id}"):
                                 supabase.table("lancamentos").delete().eq("user_id", u_id).eq("descricao", desc).eq("cartao_nome", cartao).execute()
                                 v_parc = novo_val / total_parc
@@ -224,12 +191,10 @@ else:
                                     supabase.table("lancamentos").insert({
                                         "user_id": u_id, "tipo": "Despesa", "descricao": nova_desc,
                                         "valor": round(float(v_parc), 2),
-                                        "data": str(data_inicio + relativedelta(months=j)),
-                                        "parcela_atual": j + 1, "total_parcelas": total_parc,
-                                        "cartao_nome": cartao
+                                        "data": str(df_compra['data'].min() + relativedelta(months=j)),
+                                        "parcela_atual": j + 1, "total_parcelas": total_parc, "cartao_nome": cartao
                                     }).execute()
                                 st.rerun()
-
                         if c6.button("❌", key=f"del_{unique_id}"):
                             supabase.table("lancamentos").delete().eq("user_id", u_id).eq("descricao", desc).eq("cartao_nome", cartao).execute()
                             st.rerun()
@@ -240,19 +205,16 @@ else:
             with col_nc:
                 n_c = st.text_input("Novo Cartão")
                 if st.button("Adicionar"):
-                    supabase.table("cartoes").insert({"user_id": u_id, "nome_cartao": n_c}).execute()
-                    st.rerun()
+                    supabase.table("cartoes").insert({"user_id": u_id, "nome_cartao": n_c}).execute(); st.rerun()
             with col_lc:
                 res_c = supabase.table("cartoes").select("*").eq("user_id", u_id).execute()
                 for c in res_c.data:
-                    c1, c2 = st.columns([3, 1])
-                    c1.write(f"💳 {c['nome_cartao']}")
+                    c1, c2 = st.columns([3, 1]); c1.write(f"💳 {c['nome_cartao']}")
                     if c2.button("Apagar", key=f"del_c_{c['id']}"):
                         supabase.table("lancamentos").delete().eq("user_id", u_id).eq("cartao_nome", c['nome_cartao']).execute()
-                        supabase.table("cartoes").delete().eq("id", c['id']).execute()
-                        st.rerun()
+                        supabase.table("cartoes").delete().eq("id", c['id']).execute(); st.rerun()
 
-    # --- GERENCIAR OUTROS (PIX/DINHEIRO) ---
+    # --- GERENCIAR OUTROS ---
     elif menu == "Gerenciar Outros":
         st.header("⚙️ Movimentações Avulsas")
         res_o = supabase.table("lancamentos").select("*").eq("user_id", u_id).is_("cartao_nome", "null").execute()
@@ -260,18 +222,12 @@ else:
             for item in res_o.data:
                 item_id = item['id']
                 c1, c2, c3, c4 = st.columns([2, 1, 0.5, 0.5])
-                # Exibe a data para controle do usuário
                 c1.write(f"{item['data']} - {item['descricao']}")
                 c2.write(format_real(item['valor']))
-                
                 with c3.popover("📝"):
                     n_desc_o = st.text_input("Descrição", value=item['descricao'], key=f"ed_o_d_{item_id}")
                     n_val_o = st.number_input("Valor", value=float(item['valor']), key=f"ed_o_v_{item_id}")
-                    # Mantém a data original na edição para não "pular" de mês no dashboard
                     if st.button("Atualizar", key=f"btn_upd_{item_id}"):
-                        supabase.table("lancamentos").update({"descricao": n_desc_o, "valor": n_val_o}).eq("id", item_id).execute()
-                        st.rerun()
-
+                        supabase.table("lancamentos").update({"descricao": n_desc_o, "valor": n_val_o}).eq("id", item_id).execute(); st.rerun()
                 if c4.button("❌", key=f"del_o_{item_id}"):
-                    supabase.table("lancamentos").delete().eq("id", item_id).execute()
-                    st.rerun()
+                    supabase.table("lancamentos").delete().eq("id", item_id).execute(); st.rerun()
