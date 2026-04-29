@@ -100,6 +100,7 @@ else:
         st.session_state.user = None
         st.rerun()
 
+    # --- NOVO LANÇAMENTO ---
     if menu == "Novo Lançamento":
         st.header("📝 Novo Registro")
         with st.form("form_lan", clear_on_submit=True):
@@ -124,6 +125,7 @@ else:
                     }).execute()
                 st.success("Lançado!")
 
+    # --- DASHBOARD MENSAL (CORRIGIDO PARA RESPEITAR O MÊS DE LANÇAMENTO) ---
     elif menu == "Dashboard Mensal":
         st.header("📊 Dashboard")
         res = supabase.table("lancamentos").select("*").eq("user_id", u_id).execute()
@@ -140,6 +142,7 @@ else:
                 idx_padrao = meses_disponiveis.index(hoje_str) if hoje_str in meses_disponiveis else 0
 
                 mes_sel = st.selectbox("Selecione o Mês", meses_disponiveis, index=idx_padrao)
+                # Filtra TUDO (Cartão e Avulso) pelo mês selecionado
                 df_mes = df[df['MesAno'] == mes_sel].copy()
                 
                 c1, c2, c3 = st.columns(3)
@@ -152,7 +155,7 @@ else:
                 st.markdown("### Extrato Detalhado")
                 df_mes['Data'] = df_mes['data'].dt.strftime('%d/%m/%Y')
                 df_mes['Valor R$'] = df_mes['valor'].apply(format_real)
-                df_mes['Origem'] = df_mes['cartao_nome'].fillna("Dinheiro/Pix")
+                df_mes['Origem'] = df_mes['cartao_nome'].fillna("Dinheiro/Pix/Débito")
                 st.dataframe(df_mes[['Data', 'descricao', 'Origem', 'tipo', 'Valor R$']], use_container_width=True, hide_index=True)
 
             with aba_periodo:
@@ -163,6 +166,7 @@ else:
                 df_periodo['Resultado'] = df_periodo['Receita'] - df_periodo['Despesa']
                 st.dataframe(df_periodo.style.format(format_real), use_container_width=True)
 
+    # --- CARTÕES DE CRÉDITO ---
     elif menu == "Cartões de Crédito":
         st.header("💳 Gestão de Cartões")
         tab1, tab2, tab3 = st.tabs(["Fatura Atual", "Resumo de Compras", "Configurações"])
@@ -200,8 +204,6 @@ else:
                     valor_total_orig = df_compra['valor'].sum()
                     saldo_restante = df_compra[df_compra['data'].dt.date >= date.today()]['valor'].sum()
                     data_inicio = df_compra['data'].min()
-                    
-                    # unique_id evita erro de Duplicate Key no Streamlit
                     unique_id = f"{i}_{desc}_{cartao}".replace(" ", "_")
 
                     with st.container():
@@ -250,6 +252,7 @@ else:
                         supabase.table("cartoes").delete().eq("id", c['id']).execute()
                         st.rerun()
 
+    # --- GERENCIAR OUTROS (PIX/DINHEIRO) ---
     elif menu == "Gerenciar Outros":
         st.header("⚙️ Movimentações Avulsas")
         res_o = supabase.table("lancamentos").select("*").eq("user_id", u_id).is_("cartao_nome", "null").execute()
@@ -257,12 +260,14 @@ else:
             for item in res_o.data:
                 item_id = item['id']
                 c1, c2, c3, c4 = st.columns([2, 1, 0.5, 0.5])
+                # Exibe a data para controle do usuário
                 c1.write(f"{item['data']} - {item['descricao']}")
                 c2.write(format_real(item['valor']))
                 
                 with c3.popover("📝"):
                     n_desc_o = st.text_input("Descrição", value=item['descricao'], key=f"ed_o_d_{item_id}")
                     n_val_o = st.number_input("Valor", value=float(item['valor']), key=f"ed_o_v_{item_id}")
+                    # Mantém a data original na edição para não "pular" de mês no dashboard
                     if st.button("Atualizar", key=f"btn_upd_{item_id}"):
                         supabase.table("lancamentos").update({"descricao": n_desc_o, "valor": n_val_o}).eq("id", item_id).execute()
                         st.rerun()
