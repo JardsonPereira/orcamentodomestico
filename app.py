@@ -111,10 +111,7 @@ else:
         res = supabase.table("lancamentos").select("*").eq("user_id", u_id).execute()
         if res.data:
             df = pd.DataFrame(res.data)
-            # Proteção contra KeyError (Cria a coluna caso não exista no banco)
             if 'categoria' not in df.columns: df['categoria'] = "Outros"
-            else: df['categoria'] = df['categoria'].fillna("Outros")
-
             df['data'] = pd.to_datetime(df['data'])
             df['MesAno'] = df['data'].dt.strftime('%m/%Y')
             
@@ -188,11 +185,14 @@ else:
 
         with tab2:
             if not df_all.empty:
+                if 'categoria' not in df_all.columns: df_all['categoria'] = "Outros"
                 grupos = df_all.groupby(['descricao', 'cartao_nome', 'total_parcelas'])
                 for i, ((desc, cartao, total_parc), df_compra) in enumerate(grupos):
                     unique_id = f"card_{i}_{desc}_{cartao}".replace(" ", "_")
                     v_total = df_compra['valor'].sum()
                     d_inicio = df_compra['data'].min()
+                    cat_atual = df_compra['categoria'].iloc[0]
+                    
                     with st.container():
                         c1, c2, c3, c4, c5 = st.columns([1.5, 1, 1, 0.5, 0.5])
                         c1.markdown(f"**{desc}**<br><small>{cartao} ({total_parc}x)</small>", unsafe_allow_html=True)
@@ -202,6 +202,11 @@ else:
                         with c4.popover("📝"):
                             st.write("**Editar Compra Parcelada**")
                             n_desc = st.text_input("Descrição", value=desc, key=f"ed_c_d_{unique_id}")
+                            
+                            # Edição de Categoria no Cartão
+                            idx_cat_c = CATEGORIAS_DESPESA.index(cat_atual) if cat_atual in CATEGORIAS_DESPESA else 0
+                            n_cat = st.selectbox("Categoria", CATEGORIAS_DESPESA, index=idx_cat_c, key=f"ed_c_cat_{unique_id}")
+                            
                             n_val = st.number_input("Novo Valor Total", value=float(v_total), key=f"ed_c_v_{unique_id}")
                             n_date = st.date_input("Nova Data Início", value=pd.to_datetime(d_inicio), key=f"ed_c_dt_{unique_id}")
                             if st.button("Atualizar Tudo", key=f"btn_c_{unique_id}"):
@@ -209,7 +214,7 @@ else:
                                 v_parc = n_val / total_parc
                                 for j in range(int(total_parc)):
                                     supabase.table("lancamentos").insert({
-                                        "user_id": u_id, "tipo": "Despesa", "categoria": "Outros", "descricao": n_desc,
+                                        "user_id": u_id, "tipo": "Despesa", "categoria": n_cat, "descricao": n_desc,
                                         "valor": round(float(v_parc), 2),
                                         "data": str(pd.to_datetime(n_date) + relativedelta(months=j)),
                                         "parcela_atual": j + 1, "total_parcelas": total_parc, "cartao_nome": cartao
@@ -242,7 +247,8 @@ else:
                 with c3.popover("📝"):
                     st.write("**Editar Lançamento**")
                     n_t_o = st.selectbox("Tipo", ["Receita", "Despesa"], index=0 if item['tipo'] == "Receita" else 1, key=f"t_o_{item_id}")
-                    # Garante que a categoria exista ou use Outros
+                    
+                    # Edição de Categoria no Lançamento Avulso
                     current_cat = item.get('categoria', "Outros")
                     lista_edit = CATEGORIAS_RECEITA if n_t_o == "Receita" else CATEGORIAS_DESPESA
                     idx_cat = lista_edit.index(current_cat) if current_cat in lista_edit else 0
