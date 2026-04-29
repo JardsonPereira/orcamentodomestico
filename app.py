@@ -109,7 +109,7 @@ else:
                 meses_disponiveis = sorted(df['MesAno'].unique(), reverse=True)
                 hoje_str = date.today().strftime('%m/%Y')
                 idx_padrao = meses_disponiveis.index(hoje_str) if hoje_str in meses_disponiveis else 0
-                mes_sel = st.selectbox("Selecione o Mês", meses_disponiveis, index=idx_padrao, key="dash_mes_sel")
+                mes_sel = st.selectbox("Selecione o Mês", meses_disponiveis, index=idx_padrao, key="dash_sel")
                 
                 df_mes = df[df['MesAno'] == mes_sel].copy()
                 c1, c2, c3 = st.columns(3)
@@ -119,7 +119,7 @@ else:
                 c2.metric("Saídas", format_real(des))
                 c3.metric("Saldo", format_real(rec - des))
                 
-                st.markdown("### 📋 Movimentações Detalhadas")
+                st.markdown("### 📋 Extrato Detalhado")
                 df_view = df_mes.copy()
                 df_view['Data'] = df_view['data'].dt.strftime('%d/%m/%Y')
                 df_view['Valor'] = df_view['valor'].apply(format_real)
@@ -128,14 +128,7 @@ else:
                 df_view = df_view.sort_values(by='data', ascending=True)
                 st.dataframe(df_view[['Data', 'descricao', 'Tipo', 'Origem', 'Valor']], use_container_width=True, hide_index=True)
 
-            with aba_periodo:
-                df_periodo = df.groupby(['MesAno', 'tipo'])['valor'].sum().unstack(fill_value=0)
-                for col in ['Receita', 'Despesa']:
-                    if col not in df_periodo.columns: df_periodo[col] = 0
-                df_periodo['Resultado'] = df_periodo['Receita'] - df_periodo['Despesa']
-                st.dataframe(df_periodo.style.format(format_real), use_container_width=True)
-
-    # --- CARTÕES DE CRÉDITO ---
+    # --- CARTÕES DE CRÉDITO (EDIÇÃO/EXCLUSÃO EM MASSA) ---
     elif menu == "Cartões de Crédito":
         st.header("💳 Gestão de Cartões")
         tab1, tab2, tab3 = st.tabs(["Fatura Atual", "Resumo de Compras", "Configurações"])
@@ -161,27 +154,30 @@ else:
                 df_all['data'] = pd.to_datetime(df_all['data'])
                 grupos = df_all.groupby(['descricao', 'cartao_nome', 'total_parcelas'])
                 for i, ((desc, cartao, total_parc), df_compra) in enumerate(grupos):
-                    unique_id = f"{i}_{desc}_{cartao}".replace(" ", "_")
+                    unique_id = f"card_{i}_{desc}_{cartao}".replace(" ", "_")
+                    v_total = df_compra['valor'].sum()
+                    d_inicio = df_compra['data'].min()
                     with st.container():
                         c1, c2, c3, c4, c5, c6 = st.columns([1.5, 1, 1, 1, 0.5, 0.5])
                         c1.markdown(f"**{desc}**<br><small>{cartao} ({total_parc}x)</small>", unsafe_allow_html=True)
-                        c2.write(f"Total: {format_real(df_compra['valor'].sum())}")
-                        c4.write(f"Início: {df_compra['data'].min().strftime('%d/%m/%Y')}")
+                        c2.write(f"Total: {format_real(v_total)}")
+                        c4.write(f"Início: {d_inicio.strftime('%d/%m/%Y')}")
+                        
                         with c5.popover("📝"):
-                            nova_desc = st.text_input("Descrição", value=desc, key=f"ed_desc_{unique_id}")
-                            novo_val = st.number_input("Valor Total", value=float(df_compra['valor'].sum()), key=f"ed_val_{unique_id}")
-                            if st.button("Salvar", key=f"btn_save_{unique_id}"):
+                            n_desc = st.text_input("Descrição", value=desc, key=f"ed_c_d_{unique_id}")
+                            n_val = st.number_input("Novo Total", value=float(v_total), key=f"ed_c_v_{unique_id}")
+                            if st.button("Salvar Alterações", key=f"btn_c_{unique_id}"):
                                 supabase.table("lancamentos").delete().eq("user_id", u_id).eq("descricao", desc).eq("cartao_nome", cartao).execute()
-                                v_parc = novo_val / total_parc
+                                v_parc = n_val / total_parc
                                 for j in range(int(total_parc)):
                                     supabase.table("lancamentos").insert({
-                                        "user_id": u_id, "tipo": "Despesa", "descricao": nova_desc,
+                                        "user_id": u_id, "tipo": "Despesa", "descricao": n_desc,
                                         "valor": round(float(v_parc), 2),
-                                        "data": str(df_compra['data'].min() + relativedelta(months=j)),
+                                        "data": str(d_inicio + relativedelta(months=j)),
                                         "parcela_atual": j + 1, "total_parcelas": total_parc, "cartao_nome": cartao
                                     }).execute()
                                 st.rerun()
-                        if c6.button("❌", key=f"del_{unique_id}"):
+                        if c6.button("❌", key=f"del_c_m_{unique_id}"):
                             supabase.table("lancamentos").delete().eq("user_id", u_id).eq("descricao", desc).eq("cartao_nome", cartao).execute()
                             st.rerun()
                         st.divider()
@@ -196,53 +192,36 @@ else:
                 res_c = supabase.table("cartoes").select("*").eq("user_id", u_id).execute()
                 for c in res_c.data:
                     c1, c2 = st.columns([3, 1]); c1.write(f"💳 {c['nome_cartao']}")
-                    if c2.button("Apagar", key=f"del_c_{c['id']}"):
+                    if c2.button("Apagar", key=f"del_c_x_{c['id']}"):
                         supabase.table("lancamentos").delete().eq("user_id", u_id).eq("cartao_nome", c['nome_cartao']).execute()
                         supabase.table("cartoes").delete().eq("id", c['id']).execute(); st.rerun()
 
-    # --- GERENCIAR OUTROS (PIX/DÉBITO/DINHEIRO) ORGANIZADO POR MÊS ---
+    # --- GERENCIAR OUTROS (POR MÊS E COM EDIÇÃO) ---
     elif menu == "Gerenciar Outros":
         st.header("⚙️ Gerenciar Lançamentos Avulsos")
-        
-        # Busca apenas os lançamentos sem cartão (Avulsos)
         res_o = supabase.table("lancamentos").select("*").eq("user_id", u_id).is_("cartao_nome", "null").execute()
-        
         if res_o.data:
             df_o = pd.DataFrame(res_o.data)
             df_o['data'] = pd.to_datetime(df_o['data'])
             df_o['MesAno'] = df_o['data'].dt.strftime('%m/%Y')
-            
-            # Seleção do mês para gerenciar
             meses_o = sorted(df_o['MesAno'].unique(), reverse=True)
-            mes_sel_o = st.selectbox("Selecione o mês para gerenciar", meses_o, key="gerenciar_mes_o")
+            mes_sel_o = st.selectbox("Mês para gerenciar", meses_o, key="mes_o_sel")
             
-            df_filtrado_o = df_o[df_o['MesAno'] == mes_sel_o].sort_values(by='data', ascending=False)
-            
-            st.write(f"Exibindo lançamentos de **{mes_sel_o}**")
+            df_f_o = df_o[df_o['MesAno'] == mes_sel_o].sort_values(by='data', ascending=False)
             st.divider()
-
-            for item in df_filtrado_o.to_dict(orient='records'):
+            for item in df_f_o.to_dict(orient='records'):
                 item_id = item['id']
-                # Identificador visual (ícone)
                 icon = "🟢" if item['tipo'] == "Receita" else "🔴"
-                
                 c1, c2, c3, c4 = st.columns([2, 1, 0.5, 0.5])
-                
                 c1.write(f"{icon} {item['data'].strftime('%d/%m/%Y')} - **{item['descricao']}**")
                 c2.write(format_real(item['valor']))
-                
-                # Edição
                 with c3.popover("📝"):
-                    n_tipo = st.selectbox("Tipo", ["Receita", "Despesa"], index=0 if item['tipo'] == "Receita" else 1, key=f"tipo_o_{item_id}")
-                    n_desc_o = st.text_input("Descrição", value=item['descricao'], key=f"ed_o_d_{item_id}")
-                    n_val_o = st.number_input("Valor", value=float(item['valor']), key=f"ed_o_v_{item_id}")
-                    if st.button("Atualizar", key=f"btn_upd_{item_id}"):
-                        supabase.table("lancamentos").update({"tipo": n_tipo, "descricao": n_desc_o, "valor": n_val_o}).eq("id", item_id).execute()
+                    n_t_o = st.selectbox("Tipo", ["Receita", "Despesa"], index=0 if item['tipo'] == "Receita" else 1, key=f"t_o_{item_id}")
+                    n_d_o = st.text_input("Descrição", value=item['descricao'], key=f"d_o_{item_id}")
+                    n_v_o = st.number_input("Valor", value=float(item['valor']), key=f"v_o_{item_id}")
+                    if st.button("Atualizar", key=f"btn_o_{item_id}"):
+                        supabase.table("lancamentos").update({"tipo": n_t_o, "descricao": n_d_o, "valor": n_v_o}).eq("id", item_id).execute()
                         st.rerun()
-
-                # Exclusão
                 if c4.button("❌", key=f"del_o_{item_id}"):
-                    supabase.table("lancamentos").delete().eq("id", item_id).execute()
-                    st.rerun()
-        else:
-            st.info("Nenhum lançamento avulso encontrado.")
+                    supabase.table("lancamentos").delete().eq("id", item_id).execute(); st.rerun()
+        else: st.info("Nenhum lançamento avulso.")
