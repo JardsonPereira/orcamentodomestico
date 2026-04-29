@@ -26,7 +26,7 @@ st.markdown("""
     </style>
     """, unsafe_allow_html=True)
 
-# --- CONSTANTES (CATEGORIAS EXPANDIDAS) ---
+# --- CONSTANTES ---
 CATEGORIAS_DESPESA = [
     "Alimentação", "Supermercado", "Restaurantes", "Moradia (Aluguel/Cond)", 
     "Contas Fixas (Luz/Água/Gás)", "Transporte", "Combustível", "Uber/Táxi",
@@ -158,13 +158,6 @@ else:
                         cat_chart = df_gastos.groupby('categoria')['valor'].sum()
                         st.bar_chart(cat_chart)
                     else: st.info("Sem despesas para o gráfico.")
-
-            with aba_periodo:
-                df_periodo = df.groupby(['MesAno', 'tipo'])['valor'].sum().unstack(fill_value=0)
-                for col in ['Receita', 'Despesa']:
-                    if col not in df_periodo.columns: df_periodo[col] = 0
-                df_periodo['Resultado'] = df_periodo['Receita'] - df_periodo['Despesa']
-                st.dataframe(df_periodo.style.format(format_real), use_container_width=True)
 
     # --- CARTÕES DE CRÉDITO ---
     elif menu == "Cartões de Crédito":
