@@ -111,13 +111,7 @@ else:
         res = supabase.table("lancamentos").select("*").eq("user_id", u_id).execute()
         if res.data:
             df = pd.DataFrame(res.data)
-            
-            # CORREÇÃO PARA O KEYERROR: Garante que a coluna 'categoria' exista
-            if 'categoria' not in df.columns:
-                df['categoria'] = 'Outros'
-            else:
-                df['categoria'] = df['categoria'].fillna('Outros')
-
+            if 'categoria' not in df.columns: df['categoria'] = 'Outros'
             df['data'] = pd.to_datetime(df['data'])
             df['MesAno'] = df['data'].dt.strftime('%m/%Y')
             
@@ -143,10 +137,7 @@ else:
                     df_view['Valor'] = df_view['valor'].apply(format_real)
                     df_view['Tipo'] = df_view['tipo'].apply(lambda x: "🟢" if x == "Receita" else "🔴")
                     df_view = df_view.sort_values(by='data', ascending=True)
-                    
-                    # Exibição segura das colunas
-                    colunas_exibir = ['Data', 'Tipo', 'categoria', 'descricao', 'Valor']
-                    st.dataframe(df_view[colunas_exibir], use_container_width=True, hide_index=True)
+                    st.dataframe(df_view[['Data', 'Tipo', 'categoria', 'descricao', 'Valor']], use_container_width=True, hide_index=True)
                 
                 with col_chart2:
                     st.markdown("### 🍕 Gastos por Categoria")
@@ -155,13 +146,6 @@ else:
                         cat_chart = df_gastos.groupby('categoria')['valor'].sum()
                         st.bar_chart(cat_chart)
                     else: st.info("Sem despesas para o gráfico.")
-
-            with aba_periodo:
-                df_periodo = df.groupby(['MesAno', 'tipo'])['valor'].sum().unstack(fill_value=0)
-                for col in ['Receita', 'Despesa']:
-                    if col not in df_periodo.columns: df_periodo[col] = 0
-                df_periodo['Resultado'] = df_periodo['Receita'] - df_periodo['Despesa']
-                st.dataframe(df_periodo.style.format(format_real), use_container_width=True)
 
     # --- CARTÕES DE CRÉDITO ---
     elif menu == "Cartões de Crédito":
@@ -177,7 +161,6 @@ else:
                 df_all['MesAno'] = df_all['data'].dt.strftime('%m/%Y')
                 meses_fatura = sorted(df_all['MesAno'].unique(), key=lambda x: pd.to_datetime(x, format='%m/%Y'))
                 mes_f_sel = st.selectbox("Consultar Fatura de:", meses_fatura)
-                
                 df_f = df_all[df_all['MesAno'] == mes_f_sel].copy()
                 if not df_f.empty:
                     total_f = 0
@@ -197,32 +180,34 @@ else:
             if not df_all.empty:
                 grupos = df_all.groupby(['descricao', 'cartao_nome', 'total_parcelas'])
                 for i, ((desc, cartao, total_parc), df_compra) in enumerate(grupos):
+                    unique_id = f"card_{i}_{desc}_{cartao}".replace(" ", "_")
                     v_total = df_compra['valor'].sum()
+                    d_inicio = df_compra['data'].min()
                     with st.container():
-                        c1, c2, c3, c4 = st.columns([2, 1, 1, 0.5])
-                        c1.markdown(f"**{desc}** ({cartao})")
+                        c1, c2, c3, c4, c5 = st.columns([1.5, 1, 1, 0.5, 0.5])
+                        c1.markdown(f"**{desc}**<br><small>{cartao} ({total_parc}x)</small>", unsafe_allow_html=True)
                         c2.write(f"Total: {format_real(v_total)}")
-                        c3.write(f"{total_parc} parcelas")
-                        if c4.button("❌", key=f"del_c_{i}"):
+                        c3.write(f"Início: {pd.to_datetime(d_inicio).strftime('%d/%m/%Y')}")
+                        
+                        # FUNÇÃO DE EDIÇÃO REATIVADA
+                        with c4.popover("📝"):
+                            n_desc = st.text_input("Descrição", value=desc, key=f"ed_c_d_{unique_id}")
+                            n_val = st.number_input("Novo Total", value=float(v_total), key=f"ed_c_v_{unique_id}")
+                            if st.button("Salvar Alterações", key=f"btn_c_{unique_id}"):
+                                supabase.table("lancamentos").delete().eq("user_id", u_id).eq("descricao", desc).eq("cartao_nome", cartao).execute()
+                                v_parc = n_val / total_parc
+                                for j in range(int(total_parc)):
+                                    supabase.table("lancamentos").insert({
+                                        "user_id": u_id, "tipo": "Despesa", "categoria": "Outros", "descricao": n_desc,
+                                        "valor": round(float(v_parc), 2),
+                                        "data": str(pd.to_datetime(d_inicio) + relativedelta(months=j)),
+                                        "parcela_atual": j + 1, "total_parcelas": total_parc, "cartao_nome": cartao
+                                    }).execute()
+                                st.rerun()
+                        if c5.button("❌", key=f"del_c_{unique_id}"):
                             supabase.table("lancamentos").delete().eq("user_id", u_id).eq("descricao", desc).eq("cartao_nome", cartao).execute()
                             st.rerun()
                         st.divider()
-
-        with tab3:
-            col_nc, col_lc = st.columns(2)
-            with col_nc:
-                n_c = st.text_input("Novo Cartão")
-                if st.button("Adicionar"):
-                    supabase.table("cartoes").insert({"user_id": u_id, "nome_cartao": n_c}).execute()
-                    st.rerun()
-            with col_lc:
-                res_c = supabase.table("cartoes").select("*").eq("user_id", u_id).execute()
-                for c in res_c.data:
-                    c1, c2 = st.columns([3, 1])
-                    c1.write(f"💳 {c['nome_cartao']}")
-                    if c2.button("Apagar", key=f"del_c_x_{c['id']}"):
-                        supabase.table("cartoes").delete().eq("id", c['id']).execute()
-                        st.rerun()
 
     # --- GERENCIAR OUTROS ---
     elif menu == "Gerenciar Outros":
@@ -234,14 +219,25 @@ else:
             df_o['data'] = pd.to_datetime(df_o['data'])
             df_o['MesAno'] = df_o['data'].dt.strftime('%m/%Y')
             mes_sel_o = st.selectbox("Mês", sorted(df_o['MesAno'].unique(), reverse=True))
-            
             df_f_o = df_o[df_o['MesAno'] == mes_sel_o].sort_values(by='data', ascending=False)
+            
             for item in df_f_o.to_dict(orient='records'):
-                c1, c2, c3 = st.columns([2, 1, 0.5])
+                item_id = item['id']
                 icon = "🟢" if item['tipo'] == "Receita" else "🔴"
+                c1, c2, c3, c4 = st.columns([2, 1, 0.5, 0.5])
                 c1.write(f"{icon} {item['data'].strftime('%d/%m')} - **{item['descricao']}** ({item['categoria']})")
                 c2.write(format_real(item['valor']))
-                if c3.button("❌", key=f"del_o_{item['id']}"):
-                    supabase.table("lancamentos").delete().eq("id", item['id']).execute()
+                
+                # FUNÇÃO DE EDIÇÃO REATIVADA
+                with c3.popover("📝"):
+                    n_t_o = st.selectbox("Tipo", ["Receita", "Despesa"], index=0 if item['tipo'] == "Receita" else 1, key=f"t_o_{item_id}")
+                    n_cat_o = st.selectbox("Categoria", CATEGORIAS_RECEITA if n_t_o == "Receita" else CATEGORIAS_DESPESA, key=f"cat_o_{item_id}")
+                    n_d_o = st.text_input("Descrição", value=item['descricao'], key=f"d_o_{item_id}")
+                    n_v_o = st.number_input("Valor", value=float(item['valor']), key=f"v_o_{item_id}")
+                    if st.button("Atualizar", key=f"btn_o_{item_id}"):
+                        supabase.table("lancamentos").update({"tipo": n_t_o, "categoria": n_cat_o, "descricao": n_d_o, "valor": n_v_o}).eq("id", item_id).execute()
+                        st.rerun()
+                if c4.button("❌", key=f"del_o_{item_id}"):
+                    supabase.table("lancamentos").delete().eq("id", item_id).execute()
                     st.rerun()
         else: st.info("Nenhum lançamento avulso.")
