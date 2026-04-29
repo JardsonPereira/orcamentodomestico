@@ -13,27 +13,31 @@ except Exception:
     st.error("Erro: Credenciais do Supabase não configuradas.")
     st.stop()
 
-# --- CONFIGURAÇÃO VISUAL (AJUSTADA PARA NÃO CORTAR) ---
+# --- CONFIGURAÇÃO VISUAL (AJUSTADA PARA CORRIGIR ROLAGEM E LAYOUT) ---
 st.set_page_config(page_title="Pocket Finance", layout="wide", page_icon="🍃")
 
 st.markdown("""
     <style>
     @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;600&display=swap');
     
-    /* Ajuste para ocupar a tela cheia sem cortes */
+    /* Garante que o corpo da página permita rolagem e não corte o conteúdo */
+    html, body, [data-testid="stAppViewContainer"] {
+        font-family: 'Inter', sans-serif;
+        background: linear-gradient(135deg, #f5f7fa 0%, #c3cfe2 100%);
+        height: auto !important;
+        overflow-y: auto !important;
+    }
+
+    /* Ajuste do contêiner principal para evitar cortes laterais e superiores */
     .block-container {
         padding-top: 2rem;
-        padding-bottom: 2rem;
+        padding-bottom: 5rem;
         padding-left: 3rem;
         padding-right: 3rem;
+        max-width: 100%;
     }
     
-    html, body, [class*="css"] { 
-        font-family: 'Inter', sans-serif; 
-        background: linear-gradient(135deg, #f5f7fa 0%, #c3cfe2 100%); 
-        min-height: 100vh; 
-    }
-    
+    /* Estilização dos cards de métricas */
     div[data-testid="metric-container"] { 
         background: rgba(255, 255, 255, 0.6); 
         backdrop-filter: blur(10px); 
@@ -43,6 +47,7 @@ st.markdown("""
         box-shadow: 0 8px 32px rgba(0, 0, 0, 0.05); 
     }
     
+    /* Botões com degradê */
     .stButton>button { 
         border-radius: 12px; 
         background: linear-gradient(90deg, #667eea 0%, #764ba2 100%); 
@@ -51,6 +56,7 @@ st.markdown("""
         width: 100%; 
     }
     
+    /* Tabelas e Dataframes */
     .stDataFrame, .stTable { 
         background: white; 
         border-radius: 15px; 
@@ -270,6 +276,22 @@ else:
                             supabase.table("lancamentos").delete().eq("user_id", u_id).eq("descricao", desc).eq("cartao_nome", cartao).execute()
                             st.rerun()
                         st.divider()
+
+        with tab3:
+            col_nc, col_lc = st.columns(2)
+            with col_nc:
+                n_c = st.text_input("Novo Cartão")
+                if st.button("Adicionar"):
+                    supabase.table("cartoes").insert({"user_id": u_id, "nome_cartao": n_c}).execute()
+                    st.rerun()
+            with col_lc:
+                res_c = supabase.table("cartoes").select("*").eq("user_id", u_id).execute()
+                for c in res_c.data:
+                    c1, c2 = st.columns([3, 1])
+                    c1.write(f"💳 {c['nome_cartao']}")
+                    if c2.button("Apagar", key=f"del_c_x_{c['id']}"):
+                        supabase.table("cartoes").delete().eq("id", c['id']).execute()
+                        st.rerun()
 
     # --- GERENCIAR OUTROS ---
     elif menu == "Gerenciar Outros":
