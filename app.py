@@ -26,9 +26,14 @@ st.markdown("""
     </style>
     """, unsafe_allow_html=True)
 
-# --- CONSTANTES ---
-CATEGORIAS_DESPESA = ["Alimentação", "Moradia", "Transporte", "Lazer", "Educação", "Saúde", "Assinaturas", "Outros"]
-CATEGORIAS_RECEITA = ["Salário", "Investimentos", "Extra", "Outros"]
+# --- CONSTANTES (CATEGORIAS EXPANDIDAS) ---
+CATEGORIAS_DESPESA = [
+    "Alimentação", "Supermercado", "Restaurantes", "Moradia (Aluguel/Cond)", 
+    "Contas Fixas (Luz/Água/Gás)", "Transporte", "Combustível", "Uber/Táxi",
+    "Lazer & Viagens", "Educação", "Saúde & Farmácia", "Assinaturas & TV", 
+    "Higiene & Beleza", "Vestuário", "Pets", "Presentes", "Manutenção (Casa/Auto)", "Outros"
+]
+CATEGORIAS_RECEITA = ["Salário", "Pró-labore", "Investimentos", "Vendas", "Reembolsos", "Extra", "Outros"]
 
 if 'user' not in st.session_state:
     st.session_state.user = None
@@ -106,8 +111,7 @@ else:
                     try:
                         supabase.table("lancamentos").insert(dados).execute()
                     except Exception:
-                        # Se falhar por falta da coluna categoria no banco, remove e tenta de novo
-                        dados.pop("categoria")
+                        if "categoria" in dados: dados.pop("categoria")
                         supabase.table("lancamentos").insert(dados).execute()
                 st.success("Lançamento realizado!")
 
@@ -117,7 +121,6 @@ else:
         res = supabase.table("lancamentos").select("*").eq("user_id", u_id).execute()
         if res.data:
             df = pd.DataFrame(res.data)
-            # Proteção contra KeyError: Garante que a coluna exista no DataFrame para exibição
             if 'categoria' not in df.columns: df['categoria'] = "Outros"
             df['categoria'] = df['categoria'].fillna("Outros")
 
@@ -146,9 +149,7 @@ else:
                     df_view['Valor'] = df_view['valor'].apply(format_real)
                     df_view['Tipo'] = df_view['tipo'].apply(lambda x: "🟢" if x == "Receita" else "🔴")
                     df_view = df_view.sort_values(by='data', ascending=True)
-                    # Seleção segura de colunas para evitar KeyError visual
-                    colunas = ['Data', 'Tipo', 'categoria', 'descricao', 'Valor']
-                    st.dataframe(df_view[colunas], use_container_width=True, hide_index=True)
+                    st.dataframe(df_view[['Data', 'Tipo', 'categoria', 'descricao', 'Valor']], use_container_width=True, hide_index=True)
                 
                 with col_chart2:
                     st.markdown("### 🍕 Gastos por Categoria")
@@ -229,7 +230,7 @@ else:
                                     try:
                                         supabase.table("lancamentos").insert(dados_up).execute()
                                     except Exception:
-                                        dados_up.pop("categoria")
+                                        if "categoria" in dados_up: dados_up.pop("categoria")
                                         supabase.table("lancamentos").insert(dados_up).execute()
                                 st.rerun()
                         if c5.button("❌", key=f"del_c_{unique_id}"):
@@ -274,7 +275,7 @@ else:
                         try:
                             supabase.table("lancamentos").update(dados_edit).eq("id", item_id).execute()
                         except Exception:
-                            dados_edit.pop("categoria")
+                            if "categoria" in dados_edit: dados_edit.pop("categoria")
                             supabase.table("lancamentos").update(dados_edit).eq("id", item_id).execute()
                         st.rerun()
                 if c4.button("❌", key=f"del_o_{item_id}"):
