@@ -82,7 +82,7 @@ else:
             cats = CATEGORIAS_DESPESA if tipo == "Despesa" else CATEGORIAS_RECEITA
             categoria = col2.selectbox("Categoria", cats)
             
-            desc = st.text_input("Descrição (Ex: Aluguel, Supermercado)")
+            desc = st.text_input("Descrição")
             col3, col4 = st.columns(2)
             valor_total = col3.number_input("Valor Total (R$)", min_value=0.0, format="%.2f")
             data_base = col4.date_input("Data", date.today())
@@ -111,6 +111,13 @@ else:
         res = supabase.table("lancamentos").select("*").eq("user_id", u_id).execute()
         if res.data:
             df = pd.DataFrame(res.data)
+            
+            # CORREÇÃO PARA O KEYERROR: Garante que a coluna 'categoria' exista
+            if 'categoria' not in df.columns:
+                df['categoria'] = 'Outros'
+            else:
+                df['categoria'] = df['categoria'].fillna('Outros')
+
             df['data'] = pd.to_datetime(df['data'])
             df['MesAno'] = df['data'].dt.strftime('%m/%Y')
             
@@ -136,7 +143,10 @@ else:
                     df_view['Valor'] = df_view['valor'].apply(format_real)
                     df_view['Tipo'] = df_view['tipo'].apply(lambda x: "🟢" if x == "Receita" else "🔴")
                     df_view = df_view.sort_values(by='data', ascending=True)
-                    st.dataframe(df_view[['Data', 'Tipo', 'categoria', 'descricao', 'Valor']], use_container_width=True, hide_index=True)
+                    
+                    # Exibição segura das colunas
+                    colunas_exibir = ['Data', 'Tipo', 'categoria', 'descricao', 'Valor']
+                    st.dataframe(df_view[colunas_exibir], use_container_width=True, hide_index=True)
                 
                 with col_chart2:
                     st.markdown("### 🍕 Gastos por Categoria")
@@ -162,6 +172,7 @@ else:
 
         with tab1:
             if not df_all.empty:
+                if 'categoria' not in df_all.columns: df_all['categoria'] = 'Outros'
                 df_all['data'] = pd.to_datetime(df_all['data'])
                 df_all['MesAno'] = df_all['data'].dt.strftime('%m/%Y')
                 meses_fatura = sorted(df_all['MesAno'].unique(), key=lambda x: pd.to_datetime(x, format='%m/%Y'))
@@ -181,7 +192,6 @@ else:
                             st.write(f"**Subtotal: {format_real(sub)}**")
                     st.divider()
                     st.markdown(f"### 🧾 Total das Faturas: {format_real(total_f)}")
-            else: st.info("Sem lançamentos em cartões.")
 
         with tab2:
             if not df_all.empty:
@@ -220,6 +230,7 @@ else:
         res_o = supabase.table("lancamentos").select("*").eq("user_id", u_id).is_("cartao_nome", "null").execute()
         if res_o.data:
             df_o = pd.DataFrame(res_o.data)
+            if 'categoria' not in df_o.columns: df_o['categoria'] = 'Outros'
             df_o['data'] = pd.to_datetime(df_o['data'])
             df_o['MesAno'] = df_o['data'].dt.strftime('%m/%Y')
             mes_sel_o = st.selectbox("Mês", sorted(df_o['MesAno'].unique(), reverse=True))
