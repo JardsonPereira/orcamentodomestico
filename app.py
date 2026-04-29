@@ -111,7 +111,10 @@ else:
         res = supabase.table("lancamentos").select("*").eq("user_id", u_id).execute()
         if res.data:
             df = pd.DataFrame(res.data)
-            if 'categoria' not in df.columns: df['categoria'] = 'Outros'
+            # Proteção contra KeyError (Cria a coluna caso não exista no banco)
+            if 'categoria' not in df.columns: df['categoria'] = "Outros"
+            else: df['categoria'] = df['categoria'].fillna("Outros")
+
             df['data'] = pd.to_datetime(df['data'])
             df['MesAno'] = df['data'].dt.strftime('%m/%Y')
             
@@ -163,7 +166,7 @@ else:
 
         with tab1:
             if not df_all.empty:
-                if 'categoria' not in df_all.columns: df_all['categoria'] = 'Outros'
+                if 'categoria' not in df_all.columns: df_all['categoria'] = "Outros"
                 df_all['data'] = pd.to_datetime(df_all['data'])
                 df_all['MesAno'] = df_all['data'].dt.strftime('%m/%Y')
                 meses_fatura = sorted(df_all['MesAno'].unique(), key=lambda x: pd.to_datetime(x, format='%m/%Y'))
@@ -201,7 +204,6 @@ else:
                             n_desc = st.text_input("Descrição", value=desc, key=f"ed_c_d_{unique_id}")
                             n_val = st.number_input("Novo Valor Total", value=float(v_total), key=f"ed_c_v_{unique_id}")
                             n_date = st.date_input("Nova Data Início", value=pd.to_datetime(d_inicio), key=f"ed_c_dt_{unique_id}")
-                            st.warning("Isso atualizará todas as parcelas futuras com base na nova data e valor.")
                             if st.button("Atualizar Tudo", key=f"btn_c_{unique_id}"):
                                 supabase.table("lancamentos").delete().eq("user_id", u_id).eq("descricao", desc).eq("cartao_nome", cartao).execute()
                                 v_parc = n_val / total_parc
@@ -224,7 +226,7 @@ else:
         res_o = supabase.table("lancamentos").select("*").eq("user_id", u_id).is_("cartao_nome", "null").execute()
         if res_o.data:
             df_o = pd.DataFrame(res_o.data)
-            if 'categoria' not in df_o.columns: df_o['categoria'] = 'Outros'
+            if 'categoria' not in df_o.columns: df_o['categoria'] = "Outros"
             df_o['data'] = pd.to_datetime(df_o['data'])
             df_o['MesAno'] = df_o['data'].dt.strftime('%m/%Y')
             mes_sel_o = st.selectbox("Mês", sorted(df_o['MesAno'].unique(), reverse=True))
@@ -240,18 +242,20 @@ else:
                 with c3.popover("📝"):
                     st.write("**Editar Lançamento**")
                     n_t_o = st.selectbox("Tipo", ["Receita", "Despesa"], index=0 if item['tipo'] == "Receita" else 1, key=f"t_o_{item_id}")
-                    n_cat_o = st.selectbox("Categoria", CATEGORIAS_RECEITA if n_t_o == "Receita" else CATEGORIAS_DESPESA, index=0, key=f"cat_o_{item_id}")
+                    # Garante que a categoria exista ou use Outros
+                    current_cat = item.get('categoria', "Outros")
+                    lista_edit = CATEGORIAS_RECEITA if n_t_o == "Receita" else CATEGORIAS_DESPESA
+                    idx_cat = lista_edit.index(current_cat) if current_cat in lista_edit else 0
+                    
+                    n_cat_o = st.selectbox("Categoria", lista_edit, index=idx_cat, key=f"cat_o_{item_id}")
                     n_d_o = st.text_input("Descrição", value=item['descricao'], key=f"d_o_{item_id}")
                     n_v_o = st.number_input("Valor", value=float(item['valor']), key=f"v_o_{item_id}")
                     n_dt_o = st.date_input("Data", value=pd.to_datetime(item['data']), key=f"dt_o_{item_id}")
                     
                     if st.button("Salvar", key=f"btn_o_{item_id}"):
                         supabase.table("lancamentos").update({
-                            "tipo": n_t_o, 
-                            "categoria": n_cat_o, 
-                            "descricao": n_d_o, 
-                            "valor": n_v_o,
-                            "data": str(n_dt_o)
+                            "tipo": n_t_o, "categoria": n_cat_o, "descricao": n_d_o, 
+                            "valor": n_v_o, "data": str(n_dt_o)
                         }).eq("id", item_id).execute()
                         st.rerun()
                 if c4.button("❌", key=f"del_o_{item_id}"):
